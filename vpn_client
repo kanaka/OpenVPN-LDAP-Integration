@@ -1,14 +1,22 @@
 #!/bin/bash
-
 # Written by Joel Martin <joel_martin@sil.org>
 
+# Default user settings
 NAME=$(basename ${0})
+VERBOSE=${VERBOSE:-}
+ldapuri="ldap://172.20.1.100" 
+ldapuser="vpnquery"
+ldappass="secret"
+serv_host="openvpn.example.com"
+serv_user="openvpn"
+serv_crl_path="/etc/openvpn/crl.pem"
+
 usage="""
-Usage: ${NAME} [-v] new common_name email
-       ${NAME} [-v] cert common_name email
-       ${NAME} [-v] pkg common_name
-       ${NAME} [-v] router common_name
-       ${NAME} [-v] revoke common_name
+Usage: ${NAME} [-v] new <common_name> <email>
+       ${NAME} [-v] cert <common_name> <email>
+       ${NAME} [-v] pkg <common_name>
+       ${NAME} [-v] firmware <common_name>
+       ${NAME} [-v] revoke <common_name>
        ${NAME} [-v] show-cert [common_name]
        ${NAME} [-v] show-access
        ${NAME} [-v] show-active
@@ -16,11 +24,12 @@ Usage: ${NAME} [-v] new common_name email
 
    -v            verbose output
    -h | --help   show detailed help
-   common_name   create certificate and NSIS package for
-                 Active Directory account 'common_name'
-   email         email address for common_name
+   <common_name> create certificate and NSIS package for
+                 Active Directory account <common_name>
+   <email>       email address for <common_name>
 """
-usage2="""
+usage_long="""${usage}
+
 OpenVPN client certificate management program.
 
 ${NAME} can be used to generate or revoke a client certificate,
@@ -28,25 +37,29 @@ revoke), create a Windows OpenVPN installer for a client, or show
 information about client certificates.
 
 ${NAME} new
-    Generate a new client certificate for 'common_name'
+    Generate a new client certificate for <common_name>
     and create a Windows installer package containing that
-    certificate. The 'email' address will be encoded in the
+    certificate. The <email> address will be encoded in the
     certificate.
 
 ${NAME} cert
-    Only create a new client certificate for 'common_name'. The
-    'email' address will be encoded in the certificate.
+    Only create a new client certificate for <common_name>. The
+    <email> address will be encoded in the certificate.
 
 ${NAME} pkg
     Only create the Windows installer package using a existing
     certificate.
 
+${NAME} firmware
+    Create a new DD-WRT firmware image with the OpenVPN cert/keys
+    for <common_name> installed and configured.
+
 ${NAME} revoke
-    Revoke the certificate for 'common_name' and update the CRL
+    Revoke the certificate for <common_name> and update the CRL
     (certificate revocation list) file and copy it to the server.
 
 ${NAME} show-cert
-    List valid, expired and revoked certificates. If 'common_name'
+    List valid, expired and revoked certificates. If <common_name>
     is specified then only show certificates for that client.
 
 ${NAME} show-access
@@ -79,50 +92,68 @@ Requirements:
   - files in the keys directory:
     - root CA files (ca.crt, ca.key) and tlsauth static key (ta.key)
 
-  - files in the vpn_config directory:
+  - files in the config directory:
     - openssl.cnf file (from openvpn's easy-rsa v2.0 directory)
     - openvpn client config file (client.ovpn)
 """
 
-# Default settings
-VERBOSE=${VERBOSE:-}
-ldapuri="ldap://172.20.1.100" 
-ldapuser="vpnquery"
-ldappass="secret"
-ldapbase="dc=dept,dc=example,dc=com"
-ldapbinddn="cn=${ldapuser},cn=Users,${ldapbase}"
-serv_host="openvpn.example.com"
-serv_user="openvpn"
-serv_crl_path="/etc/openvpn/crl.pem"
+main() {
+    process_parameters "$@"
+    derive_settings
+    show_settings
+    sanity_checks
 
-# Paths and commands
-top=$(readlink -f $(dirname ${0}))
-key_dir=${top}/keys
-cfg_dir=${top}/vpn_config/
-key_config=${cfg_dir}/openssl.cnf
-pkg_dir=${top}/packages
-makensis=${makensis:-makensis}
-zip=${zip:-zip}
-findpkg=$(dirname ${top}/*/openvpn-gui.nsi | tail -n1)
-nsis_dir=${nsis_dir:-${findpkg}}
-nsis_file=${nsis_dir}/openvpn-gui.nsi
-ldapsearch=${ldapsearch:-ldapsearch}
+    case ${command} in
+    new)
+        lock ${key_dir}
+        gen_cert
+        gen_pkg
+        unlock ${key_dir}
+        echo -e "\n>>> Successfully created new client"
+        ;;
+    cert)
+        lock ${key_dir}
+        gen_cert
+        unlock ${key_dir}
+        echo -e "\n>>> Successfully created new certificate"
+        ;;
+    pkg)
+        lock ${key_dir}
+        gen_pkg
+        unlock ${key_dir}
+        echo -e "\n>>> Successfully created new installer package"
+        ;;
+    firmware)
+        lock ${key_dir}
+        gen_firmware
+        unlock ${key_dir}
+        echo -e "\n>>> Successfully created new router firmware"
+        ;;
+    revoke)
+        lock ${key_dir}
+        revoke_cert
+        copy_crl
+        unlock ${key_dir}
+        echo -e "\n>>> Successfully revoked certificate"
+        ;;
+    show-cert|show-certs)
+        show_cert
+        ;;
+    show-access*)
+        show_access_log
+        ;;
+    show-active)
+        show_active
+        ;;
+    new-ca)
+        lock ${key_dir}
+        gen_ca
+        unlock ${key_dir}
+        echo -e "\n>>> Successfully created new Certificate Authority"
+        ;;
+    esac
+}
 
-ldapcmd="${ldapsearch} -LLL -x -H ${ldapuri} -D ${ldapbinddn} \
-         -w ${ldappass} -b ${ldapbase}"
-
-# Default settings that affect openssl.cnf.
-export KEY_DIR="${key_dir}"
-export KEY_OU=""
-export KEY_SIZE=2048
-export CA_EXPIRE=3650  # 10 years
-export KEY_EXPIRE=730  # 2 years
-export KEY_CITY="DALLAS"
-export KEY_PROVINCE="TX"
-export KEY_COUNTRY="US"
-export KEY_ORG="EXAMPLE COMPANY"
-export PKCS11_MODULE_PATH= # Needed for generic openssl.cnf
-export PKCS11_PIN= # Needed for generic openssl.cnf
 
 # -----------------------------------------------------------------------
 # Utility routines
@@ -135,8 +166,8 @@ usage() {
     die
 }
 vusage() {
-    echo >&2 "${usage}"
-    echo >&2 "${usage2}"
+    [ "$*" ] && echo >&2 -e "$*"
+    echo >&2 "${usage_long}"
     die
 }
 
@@ -206,6 +237,269 @@ unlock_trap() {
 
 
 # -----------------------------------------------------------------------
+# Parameter and derived variable processing
+# -----------------------------------------------------------------------
+
+process_parameters() {
+    # Process command line parameters
+    while [ "$*" ]; do
+        param=$1; shift; OPTARG=$1
+        case $param in
+        -v|--verbose) VERBOSE="-v" ;;
+        -h|--help)    vusage ;;
+        -*)           die "Unknown paramter $param" ;;
+        *)            non_opts="${non_opts} ${param}" ;;
+        esac
+    done
+    
+    # Process positional parameters
+    [ "${non_opts}" ] || usage "You must specify a command"
+    set ${non_opts}
+    command=$1; shift
+    case ${command} in
+    new|cert)
+        [ ${#} -gt 2 ] && usage "Too many parameters"
+        name=$1; email=$2 ;;
+    new-ca)
+        [ ${#} -gt 0 ] && usage "Too many parameters" ;;
+    pkg|package|firmware|revoke|show-cert*|show-access*|show-active)
+        [ ${#} -gt 1 ] && usage "Too many parameters"
+        name=$1  ;;
+    *)
+        usage "Unknown command ${command}" ;;
+    esac
+}
+
+
+derive_settings() {
+    # Paths and commands
+    top_dir=$(readlink -f $(dirname ${0}))
+    key_dir=${top_dir}/keys
+    cfg_dir=${top_dir}/config/
+    key_cfg=${cfg_dir}/openssl.cnf
+    pkg_dir=${top_dir}/packages
+
+    key_password=$(date +%Y)_${name}
+    servers=$(host -t A ${serv_host} | awk '{print $4}')
+    
+    makensis=${makensis:-makensis}
+    zip=${zip:-zip}
+    find_pkg=$(dirname $(ls -d ${top_dir}/*/openvpn-gui.nsi | tail -n1))
+    nsis_dir=${nsis_dir:-${find_pkg}}
+    nsis_file=${nsis_dir}/openvpn-gui.nsi
+
+    find_kit=$(dirname $(ls -d ${top_dir}/mod-kit/build_firmware.sh | tail -n1))
+    kit_dir=${kit_dir:-${find_kit}}
+    fw_bin=$(ls -d ${top_dir}/dd-wrt*openvpn.bin | tail -n1)
+    
+    ldapbase="dc=dept,dc=example,dc=com"
+    ldapsearch=${ldapsearch:-ldapsearch}
+    ldapbinddn="cn=${ldapuser},cn=Users,${ldapbase}"
+    ldapcmd="${ldapsearch} -LLL -x -H ${ldapuri} \
+             -D ${ldapbinddn} -w ${ldappass} -b ${ldapbase}"
+    
+    # Default settings that affect openssl.cnf.
+    export KEY_DIR="${key_dir}"
+    export KEY_OU=""
+    export KEY_CN="${name}"
+    export KEY_SIZE=2048
+    export CA_EXPIRE=3650  # 10 years
+    export KEY_EXPIRE=730  # 2 years
+    export KEY_CITY="DALLAS"
+    export KEY_PROVINCE="TX"
+    export KEY_COUNTRY="US"
+    export KEY_ORG="EXAMPLE COMPANY"
+    export KEY_EMAIL="${email}"
+    export PKCS11_MODULE_PATH= # Needed for generic openssl.cnf
+    export PKCS11_PIN= # Needed for generic openssl.cnf
+
+    # If we are creating a new CA then override CN and EMAIL
+    case ${command} in
+    new-ca)
+        export KEY_CN="${serv_host}"
+        export KEY_EMAIL="admin@example.com" ;;
+    esac
+}
+
+show_settings() {
+    # Output settings if verbose output requested
+    vecho "top_dir:      ${top_dir}"
+    vecho "command:      ${command}"
+    vecho "name:         ${name}"
+    vecho "email:        ${email}"
+    vecho "key_dir:      ${key_dir}"
+    vecho "key_cfg:      ${key_cfg}"
+    vecho "key_password: ${key_password}"
+    vecho "nsis_dir:     ${nsis_dir}"
+    vecho "nsis_file:    ${nsis_file}"
+    vecho "kit_dir:      ${kit_dir}"
+    vecho "fw_bin:       ${fw_bin}"
+    vecho "KEY_DIR:      ${KEY_DIR}"
+    vecho "KEY_CN:       ${KEY_CN}"
+    vecho "KEY_SIZE:     ${KEY_SIZE}"
+    vecho "CA_EXPIRE:    ${CA_EXPIRE}"
+    vecho "KEY_EXPIRE:   ${KEY_EXPIRE}"
+    vecho "KEY_CITY:     ${KEY_CITY}"
+    vecho "KEY_PROVINCE: ${KEY_PROVINCE}"
+    vecho "KEY_COUNTRY:  ${KEY_COUNTRY}"
+    vecho "KEY_ORG:      ${KEY_ORG}"
+    vecho "KEY_EMAIL:    ${KEY_EMAIL}"
+    vecho
+}
+
+
+# -----------------------------------------------------------------------
+# Sanity check routines
+# -----------------------------------------------------------------------
+
+sanity_checks() {
+    # General sanity checks
+    [ -d "${top_dir}" ] || die "Could not find top level directory"
+    [ -d "${cfg_dir}" ] || die "Could not find ${cfg_dir}"
+    [ -e "${key_cfg}" ] || die "Missing config file ${key_cfg}"
+  
+    # Command specific checks follow:
+ 
+    # The keys and packages directories must be in the right state
+    case ${command} in
+    new|cert|pkg|package|firmware|revoke)
+        [ "${name}" ] || usage "You must specify an account name"
+        check_dirs ;;
+    show-cert|show-certs)
+        check_dirs ;;
+    new-ca)       # New certificate authority checks
+        [ -e "${key_dir}" ] \
+            && die "${key_dir} exists, refusing to create new CA"
+        [ -e "${pkg_dir}" ] \
+            && die "${pkg_dir} exists, refusing to create new CA"
+        ;;
+    esac
+ 
+    # an active key is required
+    case ${command} in
+    pkg|package|firmware|revoke)
+        # Check to make sure there is an active key for this user
+        if cut -f1,3,6 --output-delimiter=":" ${key_dir}/index.txt \
+                | grep -qs "^V::.*CN=${name}/"; then
+            # We found one to revoke
+            true
+        else
+            die "No valid certificate for ${name} found in" \
+                "${key_dir}/index.txt"
+        fi
+        ;;
+    esac
+
+    # communication with the servers is required
+    case ${command} in
+    show-access|show-acrive|revoke)
+        [ "${servers}" ] || die "Could not resolve ${serv_host}"
+        ;;
+    esac
+
+    # the user must be configured correctly in LDAP/AD
+    case ${command} in
+    new|cert)    # New certificate checks
+        [ "${email}" ] || usage "You must specify an email address"
+        [ "${email/@/}" ] || usage "Invalid email: ${email}"
+        which ${ldapsearch} &>/dev/null \
+            || die "${ldapsearch} command not found"
+    
+        # Check to make sure there isn't an active key for this user
+        if cut -f1,3,6 --output-delimiter=":" ${key_dir}/index.txt \
+                | grep -qs "^V::.*CN=${name}/"; then
+            echo >&2 "*** ${name} already exists in ${key_dir}/index.txt"
+            echo >&2 "*** Perhaps you want to revoke before re-issuing"
+            yesno "*** Do you want to continue anyway (y/n)? " || exit 0
+            echo >&2
+        fi
+    
+        # Active Directory/LDAP account checks
+        ldif=$(${ldapcmd} "(&(objectcategory=person)(objectclass=user)(cn=${name}))")
+    
+        # Check number of records returned
+        lcount=$(echo -n "${ldif}" | grep "^dn: " | wc -l)
+        if [ "${lcount}" -eq 0 ]; then
+            die "No AD/LDAP record found for ${name}"
+        elif [ "${lcount}" -gt 1 ]; then
+            echo >&2 "More than one AD/LDAP record found for ${name}:"
+            die "$(echo "${ldif}" | grep '^cn: ')"
+        fi
+    
+        # Check VPN group membership
+        lgroups=$(echo "${ldif}" | grep -i "^memberOf: .*CN=VPN")
+        lgcount=$(echo -n "${ldif}" | grep -i "^memberOf: .*CN=VPN" | wc -l)
+        if [ "${lgcount}" -eq 0 ]; then
+            echo >&2 "*** ${name} is not a member of an AD/LDAP VPN group"
+            yesno "*** Continue anyway (y/n)? " || exit 0
+            echo >&2
+        elif [ "${lgcount}" -gt 1 ]; then
+            echo >&2 "*** ${name} is a member of multiple VPN groups:"
+            echo >&2 "${lgroups}"
+            yesno "*** Continue anyway (y/n)? " || exit 0
+            echo >&2
+        fi
+        lname=$(echo "${ldif}" | grep "^displayName: " | awk -F: '{print $2}')
+        ;;
+    pkg|package)   # New Windows package only checks
+        [ -e "${key_dir}/${name}.p12" ] \
+            || die "${name} does not have a valid certificate"
+        ;;
+    esac
+
+    # Commands that require NSIS Windows
+    case ${command} in
+    new|pkg|package)
+        which ${makensis} &>/dev/null || die "${makensis} command not found"
+        which ${zip} &>/dev/null || die "${zip} command not found"
+        [ -d "${nsis_dir}" ] || die "Could not find openvpn NSIS directory"
+        [ -e "${nsis_file}" ] || die "Could not find openvpn-gui.nsi"
+        [ -e "${cfg_dir}/client.ovpn" ] \
+            || die "Could not find ${cfg_dir}/client.ovpn"
+        ;;
+    esac
+
+    # Final confirmation
+    case ${command} in
+    new)
+        echo >&2 "*** Create new certificate and installer for:"
+        echo >&2 "***     $(echo "${name}, ${lname}, ${email}")"
+        yesno "*** Continue (y/n)? " || exit 0 ;;
+    cert)
+        echo >&2 "*** Create new certificate for:"
+        echo >&2 "***     $(echo "${name}, ${lname}, ${email}")"
+        yesno "*** Continue (y/n)? " || exit 0 ;;
+    pkg|package)
+        echo >&2 "*** Create an installer package for ${name}"
+        yesno "*** Continue (y/n)? " || exit 0 ;;
+    revoke)
+        echo >&2 "*** Revoke certificate for ${name}"
+        echo >&2 "*** and copy CRL file to ${serv_host} (${servers})"
+        yesno "*** Continue (y/n)? " || exit 0 ;;
+    new-ca)
+        echo >&2 "*** Create a new CA and server cert/key"
+        yesno "*** Continue (y/n)? " || exit 0 ;;
+    esac
+    echo >&2
+}
+
+# Verify that the keys and packages directories are sane
+check_dirs() {
+    # Make sure the key directory is sane
+    [ -d "${key_dir}" ] || die "Keys directory '${key_dir}' does not exist"
+    [ -w "${key_dir}" ] || die "Keys directory '${key_dir}' is read-only"
+    [ -w "${key_dir}/index.txt" ] \
+        || die "Index file ${key_dir}/index.txt is missing or read-only"
+    [ -w "${key_dir}/serial" ] \
+        || die "Serial file ${key_dir}/serial is missing or read-only"
+    # Verify other directories
+    [ -d "${pkg_dir}" ] || die "Could not find '${pkg_dir}'"
+    [ -w "${pkg_dir}" ] || die "Keys directory '${pkg_dir}' is read-only"
+
+}
+
+
+# -----------------------------------------------------------------------
 # Certificate and packaging routines
 # -----------------------------------------------------------------------
 
@@ -219,13 +513,13 @@ gen_cert() {
     openssl req -batch -nodes -days ${KEY_EXPIRE} \
         -new -newkey rsa:${KEY_SIZE} \
         -keyout "${name}.key" -out "${name}.csr" \
-        -config ${key_config} \
+        -config ${key_cfg} \
         || die "Failed to generate certificate request"
 
     echo -e "\n>>> Generating certificate from request"
     openssl ca -batch -md sha1 -days ${KEY_EXPIRE} \
         -in "${name}.csr" -out "${name}.crt" \
-        -config ${key_config} \
+        -config ${key_cfg} \
         || die "Failed to generated certificate from request"
 
     echo -e "\n>>> Generating pkcs12 certificate"
@@ -253,7 +547,7 @@ gen_ca() {
     openssl req -batch -nodes -days $CA_EXPIRE \
         -new -newkey rsa:$KEY_SIZE -sha1 -x509 \
         -keyout "ca.key" -out "ca.crt" \
-        -config "$key_config" \
+        -config "$key_cfg" \
         || die "Failed to generate CA cert/key"
 
     [ -s "ca.key" ] \
@@ -264,18 +558,18 @@ gen_ca() {
         -new -newkey rsa:${KEY_SIZE} \
         -keyout "server.key" -out "server.csr" \
         -extensions server \
-        -config ${key_config} \
+        -config ${key_cfg} \
         || die "Failed to generate server certificate request"
 
     echo -e "\n>>> Generating server certificate from request"
     openssl ca -batch -md sha1 -days ${CA_EXPIRE} \
         -in "server.csr" -out "server.crt" \
         -extensions server \
-        -config ${key_config} \
+        -config ${key_cfg} \
         || die "Failed to generate server certificate"
 
     echo -e "\n>>> Generating empty CRL file"
-    openssl ca -gencrl -out "crl.pem" -config ${key_config} \
+    openssl ca -gencrl -out "crl.pem" -config ${key_cfg} \
         || die "Failed to generate empty CRL file"
 
     echo -e "\n>>> Generating TLSAUTH static key"
@@ -329,50 +623,30 @@ gen_pkg() {
 #        || die "failed to create config tarbal/"
 }
 
+
+# Create a new DD-WRT router firmware image with client
+# cert/keys pre-installed and configured
+gen_firmware() {
+   echo -e "\n>>> Generating firmware"
+}
+
+
 # Add the client to the CRL
 revoke_cert() {
     cd ${key_dir} || die
 
     echo -e "\n>>> Marking certificate as revoked"
-    openssl ca -revoke "${name}.crt" -config ${key_config} \
+    openssl ca -revoke "${name}.crt" -config ${key_cfg} \
         || die "Failed mark certificate as revoked"
 
     echo -e "\n>>> Generating updated CRL file"
-    openssl ca -gencrl -out "crl.pem" -config ${key_config} \
+    openssl ca -gencrl -out "crl.pem" -config ${key_cfg} \
         || die "Failed to generate updated CRL file"
 
     echo -e "\n>>> Verifying revocation"
     cat ca.crt crl.pem > revoke-test.pem
     openssl verify -CAfile revoke-test.pem -crl_check "${name}.crt" \
         || die "Failed to verify revocation"
-}
-
-# Verify that the keys directory is sane
-check_dirs() {
-    # Make sure the key directory is sane
-    [ -d "${key_dir}" ] || die "Keys directory '${key_dir}' does not exist"
-    [ -w "${key_dir}" ] || die "Keys directory '${key_dir}' is read-only"
-    [ -w "${key_dir}/index.txt" ] \
-        || die "Index file ${key_dir}/index.txt is missing or read-only"
-    [ -w "${key_dir}/serial" ] \
-        || die "Serial file ${key_dir}/serial is missing or read-only"
-    # Verify other directories
-    [ -d "${pkg_dir}" ] || die "Could not find '${pkg_dir}'"
-    [ -w "${pkg_dir}" ] || die "Keys directory '${pkg_dir}' is read-only"
-
-}
-
-# Verify that the certificate is valid
-check_valid_cert() {
-    # Check to make sure there is an active key for this user
-    if cut -f1,3,6 --output-delimiter=":" ${key_dir}/index.txt \
-            | grep -qs "^V::.*CN=${name}/"; then
-        # We found one to revoke
-        true
-    else
-        die "No valid certificate for ${name} found in" \
-            "${key_dir}/index.txt"
-    fi
 }
 
 # Copy the CRL file to the server
@@ -511,226 +785,8 @@ show_active() {
 
 
 # -----------------------------------------------------------------------
-# Parameter processing and sanity checks
+# All functions are now defined so call main
 # -----------------------------------------------------------------------
-
-# Process command line parameters
-while [ "$*" ]; do
-    param=$1; shift; OPTARG=$1
-    case $param in
-    -v|--verbose) VERBOSE="-v" ;;
-    -h|--help)    vusage ;;
-    -*)           die "Unknown paramter $param" ;;
-    *)            non_opts="${non_opts} ${param}" ;;
-    esac
-done
-
-# Process positional parameters
-[ "${non_opts}" ] || vusage "You must specify a command"
-set ${non_opts}
-command=$1; shift
-case ${command} in
-new|cert)
-    [ ${#} -gt 2 ] && usage "Too many parameters"
-    name=$1; email=$2
-    export KEY_CN="${name}"
-    export KEY_EMAIL="${email}" ;;
-new-ca)
-    [ ${#} -gt 0 ] && usage "Too many parameters"
-    export KEY_CN="${serv_host}"
-    export KEY_EMAIL="admin@example.com" ;;
-pkg|package|revoke|show-cert*|show-access*|show-active)
-    [ ${#} -gt 1 ] && usage "Too many parameters"
-    name=$1  ;;
-*)
-    usage "Unknown command ${command}" ;;
-esac
-
-# Export parameter derived variables
-key_password=$(date +%Y)_${name}
-servers=$(host -t A ${serv_host} | awk '{print $4}')
-
-
-# Sanity checks
-which ${makensis} &>/dev/null || die "${makensis} command not found"
-which ${zip} &>/dev/null || die "${zip} command not found"
-which ${ldapsearch} &>/dev/null || die "${ldapsearch} command not found"
-[ -d "${top}" ] || die "Could not find ${top}"
-[ -d "${nsis_dir}" ] || die "Could not find openvpn NSIS directory"
-[ -e "${nsis_file}" ] || die "Could not find openvpn-gui.nsi"
-[ "${servers}" ] || die "Could not resolve ${serv_host}"
-[ -d "${cfg_dir}" ] || die "Could not find ${cfg_dir}"
-[ -e "${cfg_dir}/client.ovpn" ] \
-    || die "Could not find ${cfg_dir}/client.ovpn"
-[ -e "${key_config}" ] || die "Missing config file ${key_config}"
-
-# Output settings if verbose output requested
-vecho "top:          ${top}"
-vecho "command:      ${command}"
-vecho "name:         ${name}"
-vecho "email:        ${email}"
-vecho "key_dir:      ${key_dir}"
-vecho "key_config:   ${key_config}"
-vecho "key_password: ${key_password}"
-vecho "nsis_dir:     ${nsis_dir}"
-vecho "nsis_file:    ${nsis_file}"
-vecho "KEY_DIR:      ${KEY_DIR}"
-vecho "KEY_SIZE:     ${KEY_SIZE}"
-vecho "KEY_EXPIRE:   ${KEY_EXPIRE}"
-vecho "KEY_CITY:     ${KEY_CITY}"
-vecho "KEY_PROVINCE: ${KEY_PROVINCE}"
-vecho "KEY_COUNTRY:  ${KEY_COUNTRY}"
-vecho "KEY_ORG:      ${KEY_ORG}"
-vecho "KEY_EMAIL:    ${KEY_EMAIL}"
-vecho
-
-# Command specific sanity checks
-case ${command} in
-
-new|cert)    # New certificate checks
-    [ "${name}" ] || usage "You must specify an account name"
-    [ "${email}" ] || usage "You must specify an email address"
-    [ "${email/@/}" ] || usage "Invalid email: ${email}"
-    check_dirs
-
-    # Check to make sure there isn't an active key for this user
-    if cut -f1,3,6 --output-delimiter=":" ${key_dir}/index.txt \
-            | grep -qs "^V::.*CN=${name}/"; then
-        echo >&2 "*** ${name} already exists in ${key_dir}/index.txt"
-        echo >&2 "*** Perhaps you want to revoke before re-issuing"
-        yesno "*** Do you want to continue anyway (y/n)? " || exit 0
-        echo >&2
-    fi
-
-    # Active Directory/LDAP account checks
-    ldif=$(${ldapcmd} "(&(objectcategory=person)(objectclass=user)(cn=${name}))")
-
-    # Check number of records returned
-    lcount=$(echo -n "${ldif}" | grep "^dn: " | wc -l)
-    if [ "${lcount}" -eq 0 ]; then
-        die "No AD/LDAP record found for ${name}"
-    elif [ "${lcount}" -gt 1 ]; then
-        echo >&2 "More than one AD/LDAP record found for ${name}:"
-        die "$(echo "${ldif}" | grep '^cn: ')"
-    fi
-
-    # Check VPN group membership
-    lgroups=$(echo "${ldif}" | grep -i "^memberOf: .*CN=VPN")
-    lgcount=$(echo -n "${ldif}" | grep -i "^memberOf: .*CN=VPN" | wc -l)
-    if [ "${lgcount}" -eq 0 ]; then
-        echo >&2 "*** ${name} is not a member of an AD/LDAP VPN group"
-        yesno "*** Continue anyway (y/n)? " || exit 0
-        echo >&2
-    elif [ "${lgcount}" -gt 1 ]; then
-        echo >&2 "*** ${name} is a member of multiple VPN groups:"
-        echo >&2 "${lgroups}"
-        yesno "*** Continue anyway (y/n)? " || exit 0
-        echo >&2
-    fi
-
-    # Final confirmation
-    lname=$(echo "${ldif}" | grep "^displayName: " | awk -F: '{print $2}')
-    case $command in
-        new) echo >&2 "*** Create new certificate and installer for:" ;;
-        cert) echo >&2 "*** Create new certificate for:" ;;
-    esac
-    echo >&2 "***     $(echo "${name}, ${lname}, ${email}")"
-    yesno "*** Continue (y/n)? " || exit 0
-    echo >&2
-    ;;
-
-new-ca)       # New certificate authority checks
-    [ -e "${key_dir}" ] \
-        && die "${key_dir} exists, refusing to create new CA"
-    [ -e "${pkg_dir}" ] \
-        && die "${pkg_dir} exists, refusing to create new CA"
-
-    # Final confirmation
-    echo >&2 "*** Create a new CA and server cert/key"
-    yesno "*** Continue (y/n)? " || exit 0
-    echo >&2
-
-    ;;
-pkg|package)   # New Windows package only checks
-    [ "${name}" ] || usage "You must specify an account name"
-    check_dirs
-    # Check to make sure there is an active key for this user
-    check_valid_cert ${name}
-    [ -e "${key_dir}/${name}.p12" ] \
-        || die "${name} does not have a valid certificate"
-
-    # Final confirmation
-    echo >&2 "*** Create an installer package for ${name}"
-    yesno "*** Continue (y/n)? " || exit 0
-    echo >&2
-    ;;
-
-revoke)   # Revoke a certificate
-    [ "${name}" ] || usage "You must specify an account name"
-    check_dirs
-    # Check to make sure there is an active key for this user
-    check_valid_cert ${name}
-
-    # Final confirmation
-    echo >&2 "*** Revoke certificate for ${name}"
-    echo >&2 "*** and copy CRL file to ${serv_host} (${servers})"
-    yesno "*** Continue (y/n)? " || exit 0
-    echo >&2
-    ;;
-show-cert|show-certs)    # Show certificates
-    check_dirs
-    ;;
-show-access|show-acrive) # Show server access information
-    ;;
-esac
-
-
-# -----------------------------------------------------------------------
-# Now the real work
-# -----------------------------------------------------------------------
-
-
-case ${command} in
-    new)
-        lock ${key_dir}
-        gen_cert
-        gen_pkg
-        unlock ${key_dir}
-        echo -e "\n>>> Successfully created new client"
-        ;;
-    new-ca)
-        lock ${key_dir}
-        gen_ca
-        unlock ${key_dir}
-        echo -e "\n>>> Successfully created new Certificate Authority"
-        ;;
-    cert)
-        lock ${key_dir}
-        gen_cert
-        unlock ${key_dir}
-        echo -e "\n>>> Successfully created new certificate"
-        ;;
-    pkg)
-        lock ${key_dir}
-        gen_pkg
-        unlock ${key_dir}
-        echo -e "\n>>> Successfully created new installer package"
-        ;;
-    revoke)
-        lock ${key_dir}
-        revoke_cert
-        copy_crl
-        unlock ${key_dir}
-        echo -e "\n>>> Successfully revoked certificate"
-        ;;
-    show-cert|show-certs)
-        show_cert
-        ;;
-    show-access*)
-        show_access_log
-        ;;
-    show-active)
-        show_active
-        ;;
-esac
+main "$@"
+exit 0
 
