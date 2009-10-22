@@ -4,24 +4,26 @@
 # Default user settings
 NAME=$(basename ${0})
 VERBOSE=${VERBOSE:-}
-ldapuri="ldap://172.20.1.100" 
-ldapuser="vpnquery"
-ldappass="secret"
-serv_host="openvpn.example.com"
-serv_user="openvpn"
-serv_crl_path="/etc/openvpn/crl.pem"
+
+# Read in the LDAP/AD and server configuration file
+. ${0}.cfg
+
+# This should match the regex in the client-connect script
+re_access="^vpn[^0-9 ]*[\s=:]\s*(\d+)(?:$|\s$)"
 
 usage="""
-Usage: ${NAME} [-v] new <common_name> <email>
-       ${NAME} [-v] cert <common_name> <email>
-       ${NAME} [-v] pkg <common_name>
-       ${NAME} [-v] firmware <common_name>
-       ${NAME} [-v] revoke <common_name>
-       ${NAME} [-v] show-cert [common_name]
-       ${NAME} [-v] show-access [--all]
-       ${NAME} [-v] show-active
-       ${NAME} [-v] new-ca
+Usage:
+       ${NAME} [options] new <common_name> <email>
+       ${NAME} [options] cert <common_name> <email>
+       ${NAME} [options] pkg <common_name>
+       ${NAME} [options] firmware <common_name>
+       ${NAME} [options] revoke <common_name>
+       ${NAME} [options] show-cert [common_name]
+       ${NAME} [options] show-access [--all]
+       ${NAME} [options] show-active
+       ${NAME} [options] new-ca
 
+General Options:
    -v            verbose output
    -h | --help   show detailed help
    -p | --password PASSWORD
@@ -32,11 +34,14 @@ Usage: ${NAME} [-v] new <common_name> <email>
 """
 usage_long="""${usage}
 
-OpenVPN client certificate management program.
+Description:
+    OpenVPN client certificate management program.
 
-${NAME} can be used to generate or revoke a client certificate,
-revoke), create a install packages for a client, or show
-information about client certificates.
+    ${NAME} can be used to generate or revoke a client
+    certificate, create a install packages for a client, or
+    show information about client certificates. You must
+    configure ${NAME} in ${NAME}.cfg before you can use it.
+    (see Configuration section below). 
 
 ${NAME} new
     Generate a new client certificate for <common_name>
@@ -83,20 +88,56 @@ ${NAME} new-ca
     client keys. For this reason you must manually remove the keys
     and packages subdirectory before this command will run.
 
-Requirements:
 
-  - Packages:
+Configuration:
+
+    The Active Directory/LDAP and OpenVPN server configuration for
+    ${NAME} must be specified in ${NAME}.cfg.
+    
+    The following variables need to be configured:
+
+    ---------------
+    ldapuri=\"ldap://<host_or_IP>\"
+        # LDAP URI to connect to
+
+    ldapuser=\"<user>\"
+        # LDAP/AD user with permission to query
+
+    ldappass=\"<password>\"
+        # Password for the query user
+
+    serv_host=\"<serv_host>\"
+        # Hostname of the OpenVPN server(s). The hostname can map
+        # to more than 1 IP address.
+
+    serv_user=\"<serv_user>\"
+        # A user on the OpenVPN server(s) that has permission to read
+        # the openvpn status and log files and has permission to
+        # overwrite the CRL (certificate revocation list) file.
+        # The ssh public key for the user that run the ${NAME} program
+        # should be added to the authorized_keys file of the this user
+        # on the OpenVPN server(s) so that no password is required.
+
+    serv_crl_path=\"<path>\"
+        # The path on the OpenVPN server(s) to the CRL file.
+    ---------------
+
+
+Requirements/prerequisites:
+
+  - installed packages:
     - openssl:    key management
     - ldap-utils: ldapsearch command to verify users
     - nsis:       makensis to create Windows NSIS package
-    - zip:        to compress NSIS *.exe
+    - zip:        to compress the NSIS *.exe
 
-  - files in the keys directory:
-    - root CA files (ca.crt, ca.key) and tlsauth static key (ta.key)
-
-  - files in the config directory:
+  - files in the 'config' directory:
     - openssl.cnf file (from openvpn's easy-rsa v2.0 directory)
-    - openvpn client config file (client.ovpn)
+    - openvpn client config files:
+      client.ovpn, linux.conf, router.conf
+
+  - the ${NAME}.cfg file must be setup as described above.
+
 """
 
 main() {
@@ -168,8 +209,8 @@ usage() {
     die
 }
 vusage() {
-    [ "$*" ] && echo >&2 -e "$*"
-    echo >&2 "${usage_long}"
+    [ "$*" ] && echo -e "$*"
+    echo "${usage_long}"
     die
 }
 
@@ -449,9 +490,10 @@ sanity_checks() {
     
         # Active Directory/LDAP account checks
         ldif=$(${ldapcmd} "(&(objectcategory=person)(objectclass=user)(cn=${name}))")
-        lname=$(echo "${ldif}" | grep "^displayName: " | sed 's/^.*: //')
+        dn=$(echo "${ldif}" | grep -i "^dn: " | sed 's/^.*: //')
+        lname=$(echo "${ldif}" | grep -i "^displayName: " | sed 's/^.*: //')
     
-        # Check number of records returned
+        # Check number of user records returned
         lcount=$(echo -n "${ldif}" | grep "^dn: " | wc -l)
         if [ "${lcount}" -eq 0 ]; then
             die "No AD/LDAP record found for ${name}"
@@ -460,26 +502,35 @@ sanity_checks() {
             die "$(echo "${ldif}" | grep '^cn: ')"
         fi
     
-        # Check VPN group membership
-        lgroups=$(echo "${ldif}" | grep -i "^memberOf: .*CN=VPN")
-        lgcount=$(echo "${ldif}" | grep -i "^memberOf: .*CN=VPN" | wc -l)
-        lgroups=$(echo "${lgroups}" | awk -F'[=,]' '{print $2}')
+        # Check group membership in VPN groups with correct info field
+        ldata=$(${ldapcmd} "(&(cn=VPN *)(member=${dn}))" \
+                | grep -Ei "^cn: VPN|^info:")
+        count=0
+        while read g; do
+            vecho "Checking group '${g}'"
+            iraw=$(echo "${ldata}" | egrep -A1 "${g}" | grep "^info:")
+            if echo "${iraw}" | grep -qs "^info::"; then
+                # decode base64 encoded info field
+                info=$(echo "${iraw}" | sed 's/^[^:]*:: //' | base64 -d)
+            else
+                # Not encoded
+                info=$(echo "${iraw}" | sed 's/^[^:]*: //')
+            fi
+            # Only accumulate groups with vpn access data in info field
+            if echo "${info}" | grep -qsP "${re_access}"; then
+                count=$(( count + 1 ))
+                lgroup="${lgroup}${g}, "
+            fi
+        done < <(echo -e "${ldata}" | grep -i "^cn:" | sed 's/^[^:]*: //')
+        lgroup=${lgroup%, }
 
-        # TODO: validate info field
-#        echo "${lgroups}" | while read group; do
-#            echo "${ldapcmd} 'CN=${group}'"
-#            ldif=$(${ldapcmd} "CN=${group}")
-#            echo -e "ldif:\n${ldif}"
-#        done
-        lvgroups="${lgroups}"
-
-        if [ "${lgcount}" -eq 0 ]; then
+        if [ "${count}" -eq 0 ]; then
             echo >&2 "*** ${name} is not a member of an AD/LDAP VPN group"
             yesno "*** Continue anyway (y/n)? " || exit 1
             echo >&2
-        elif [ "${lgcount}" -gt 1 ]; then
+        elif [ "${count}" -gt 1 ]; then
             echo >&2 "*** ${name} is a member of multiple VPN groups:"
-            echo >&2 "${lvgroups}"
+            echo >&2 -e "    ${lgroup}"
             yesno "*** Continue anyway (y/n)? " || exit 1
             echo >&2
         fi
@@ -517,17 +568,17 @@ sanity_checks() {
     case ${command} in
     new)
         echo >&2 "*** Create new certificate and install packages for:"
-        echo >&2 "***     Username  : ${name}"
-        echo >&2 "***     Name      : ${lname}"
-        echo >&2 "***     Email     : ${email}"
-        echo >&2 "***     VPN group : ${lvgroups}"
+        echo >&2 "***     Username     : ${name}"
+        echo >&2 "***     Name         : ${lname}"
+        echo >&2 "***     Email        : ${email}"
+        echo >&2 "***     VPN group(s) : ${lgroup}"
         yesno "*** Continue (y/n)? " || exit 1 ;;
     cert)
         echo >&2 "*** Create new certificate for ${lname}:"
-        echo >&2 "***     Username  : ${name}"
-        echo >&2 "***     Name      : ${lname}"
-        echo >&2 "***     Email     : ${email}"
-        echo >&2 "***     VPN group : ${lvgroups}"
+        echo >&2 "***     Username     : ${name}"
+        echo >&2 "***     Name         : ${lname}"
+        echo >&2 "***     Email        : ${email}"
+        echo >&2 "***     VPN group    : ${lgroup}"
         yesno "*** Continue (y/n)? " || exit 1 ;;
     pkg|package)
         echo >&2 "*** Create an install packages for ${name}:"
@@ -865,8 +916,8 @@ show_access_log() {
     echo >&2 -e "Gathering log data, please wait\n"
 
     for server in ${servers}; do
-        raw="${data}$(ssh -o BatchMode=yes ${serv_user}@${server} \
-            "egrep -h 'SENT|SIGUSR1' ${logs}")" \
+        raw="$(ssh -o BatchMode=yes ${serv_user}@${server} \
+            "egrep -sh 'SENT|SIGUSR1' ${logs} || true")" \
             || die "Failed to get data from ${ssh_dest}"
         while read d1 d2 d3 d4 d5 ignore who type rest; do
             user=${who%/*}
@@ -918,8 +969,8 @@ show_active() {
            "--------------------"
     for server in ${servers}; do
         raw="$(ssh -o BatchMode=yes ${serv_user}@${server} \
-            'egrep ",[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:" \
-            /var/run/openvpn/openvpn-status.log')" \
+            'egrep -s ",[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:" \
+            /var/run/openvpn/openvpn-status.log || true')" \
             || die "Failed to get data from ${server}"
         while read user ip inb outb date; do
             echo "${user}" | grep -qs "^[0-9\.]*$" && continue
