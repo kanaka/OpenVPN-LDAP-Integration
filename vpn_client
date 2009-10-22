@@ -311,10 +311,10 @@ derive_settings() {
     
     makensis=${makensis:-makensis}
     zip=${zip:-zip}
-    find_pkg=$(dirname $(ls -d ${top_dir}/*/openvpn-gui.nsi \
+    find_pkg=$(dirname $(ls -d ${top_dir}/*/install-win32 \
                2>/dev/null | tail -n1) 2>/dev/null)
     nsis_dir=${nsis_dir:-${find_pkg}}
-    nsis_file=${nsis_dir}/openvpn-gui.nsi
+    nsis_file=${nsis_dir}/install-win32/openvpn.nsi
 
     find_kit=$(dirname $(ls -d ${top_dir}/mod-kit/build_firmware.sh \
                2>/dev/null | tail -n1) 2>/dev/null)
@@ -359,6 +359,7 @@ show_settings() {
     vecho "email:         ${email}"
     vecho "key_dir:       ${key_dir}"
     vecho "key_cfg:       ${key_cfg}"
+    vecho "pkg_dir:       ${pkg_dir}"
     vecho "key_password:  ${key_password}"
     vecho "http_password: ${http_password}"
     vecho "servers:       ${servers}"
@@ -495,7 +496,7 @@ sanity_checks() {
         which ${makensis} &>/dev/null || die "${makensis} command not found"
         which ${zip} &>/dev/null || die "${zip} command not found"
         [ -d "${nsis_dir}" ] || die "Could not find openvpn NSIS directory"
-        [ -e "${nsis_file}" ] || die "Could not find openvpn-gui.nsi"
+        [ -e "${nsis_file}" ] || die "Could not find openvpn.nsi"
         [ -e "${cfg_dir}/client.ovpn" ] \
             || die "Could not find ${cfg_dir}/client.ovpn"
         ;;
@@ -650,16 +651,18 @@ gen_ca() {
 # Generate the install packages
 gen_pkg() {
     local pkg=openvpn-${name}-install
+    local ovpn_conf_dir=${nsis_dir}/conf
     # Now build the Windows package using that key
     echo -e "\n>>> Copying data files into NSIS OpenVPN package"
+    mkdir -p ${ovpn_conf_dir}
     # Copy the pkcs12 cert/key just generated into the NSIS config
-    cp ${key_dir}/${name}.p12 ${nsis_dir}/openvpn/config/client.p12 \
+    cp ${key_dir}/${name}.p12 ${ovpn_conf_dir}/client.p12 \
         || die "Could not copy pkgcs12 cert (${name}.p12)"
 
     # Copy the the config and static key
-    cp ${cfg_dir}/client.ovpn ${nsis_dir}/openvpn/config/client.ovpn \
+    cp ${cfg_dir}/client.ovpn ${ovpn_conf_dir}/client.ovpn \
         || die "Could not copy client config (client.ovpn)"
-    cp ${key_dir}/ta.key ${nsis_dir}/openvpn/config/ta.key \
+    cp ${key_dir}/ta.key ${ovpn_conf_dir}/ta.key \
         || die "Could not copy static key (ta.key)"
 
     echo -e "\n>>> Generating NSIS OpenVPN package"
