@@ -21,14 +21,13 @@ Description:
       ldap_server = ldap://172.20.0.10
       ldap_user = vpnquery_account
       ldap_password = secret
-      default_subnet = 10.5.1     # Optional
 
   The subnet value is determined as follows:
     - Look up the LDAP group memberships for <common_name>
     - If group name is "VPN *" then read 'info' field of that group
-    - Search 'info' field for a line in the form *net* = <subnet>
-    - If none found via LDAP/AD and a default subnet is set in config
-      file, use that, otherwise return an error (prevent access).
+    - Search 'info' field for a line in the form vpn* = <access_num>
+    - Append <access_num> to the first two octets of the 'server'
+      setting for OpenVPN
 
   Written by Joel Martin <joel_martin@sil.org>
 """
@@ -38,6 +37,24 @@ import ConfigParser, StringIO
 
 debug = 0  # 0->none, 1->some, 2->verbose, 3->ldap data
 local_config = "client-connect.cfg"
+
+# Regex configuration matching
+re_status = re.compile(r"^status (\S+) *(\d+)(?:$|\s)",
+                       re.MULTILINE)
+re_server = re.compile(r"^server (\d+.\d+).0.0\s255.255.0.0(?:$|\s)",
+                       re.MULTILINE)
+re_access = re.compile(r"^vpn[^0-9 ]*[\s=:]\s*(\d+)(?:$|\s$)",
+                       re.IGNORECASE | re.MULTILINE)
+
+def get_conf(regex, text, file, name):
+    re_matches = regex.findall(text)
+    if len(re_matches) < 1:
+        print "No valid '%s' line found in %s" % (name, file)
+        sys.exit(1)
+    if len(re_matches) > 1:
+        print "Multiple '%s' lines found in %s" % (name, file)
+        sys.exit(1)
+    return re_matches[0]
 
 
 # Sectionless config parser
@@ -50,13 +67,6 @@ class SimpleConfigParser(ConfigParser.ConfigParser):
         else:
             file = StringIO.StringIO("[default]\n" + text)
             self.readfp(file, filename)
-
-# Sort IP addresses numerically
-def ip_tuple(ip):
-    return tuple([int(x) for x in ip.split('.')])
-
-def ip_cmp(a, b):
-    return cmp(ip_tuple(a), ip_tuple(b))
 
 #
 class openvpn_allocator:
@@ -83,43 +93,46 @@ class openvpn_allocator:
             print "common_name not set"
             print usage
             sys.exit(1)
+        try:
+            global debug
+            debug=int(os.environ['debug'])
+        except:
+            pass
         
         # Read in our local config settings
         cfg = SimpleConfigParser()
         cfg.read(local_config)
-        if cfg.has_option("default", "default_subnet"):
-            self.default_subnet = cfg.get("default", "default_subnet")
-        else:
-            self.default_subnet = ""
         self.ldap_server = cfg.get("default", "ldap_server")
         self.ldap_user = cfg.get("default", "ldap_user")
         self.ldap_password = cfg.get("default", "ldap_password")
         if debug == 2:
             print "configuration (%s):" % local_config
-            print "  default_subnet: %s" % self.default_subnet
             print "  ldap_server: %s" % self.ldap_server
             print "  ldap_user: %s" % self.ldap_user
             print "  ldap_password: %s" % self.ldap_password
         
         # Read in the global openvpn configuration
         try:
-            f = open(config_file)
-            config = f.readlines()
-            f.close()
+            config = open(config_file).read()
         except:
             print "Could not read %s" % config_file
             sys.exit(1)
         
-        # Extract settings needed for further processing
-        for line in config:
-            if line.startswith("status "): 
-                self.status_file = line.split()[1]
+        # Extract settings from openvpn configuration
+        (self.status_file, secs) = get_conf(re_status, config,
+                                            config_file, 'status')
+        if secs != "1":
+            print "Status file update frequency must be 1 sec"
+            sys.exit(1)
+        if debug: print "Status file:", self.status_file
 
+        self.full_subnet = get_conf(re_server, config, config_file, 'server')
+        if debug: print "Full Class B Subnet:", self.full_subnet
+
+    def read_status(self):
         # Read in the runtime status/lease file
         try:
-            f = open(self.status_file)
-            self.status = f.readlines()
-            f.close()
+            self.status = open(self.status_file).readlines()
         except:
             print "Could not read %s" % self.status_file
             sys.exit(1)
@@ -132,16 +145,6 @@ class openvpn_allocator:
             print "\n%s" % cn
             for key in data.keys():
                 print "    %s: %s" % (key, data[key])
-
-    # Use config default if specified, otherwise, error out
-    def no_subnet(self, msg):
-        if self.default_subnet:
-            print "%s, using default subnet %s" % (msg, self.default_subnet)
-            self.subnet = self.default_subnet
-            return 1
-        else:
-            print "%s, and no default subnet specified" % msg
-            return 0
 
     def lookup_ldap_subnet(self):
         pw = self.ldap_password
@@ -184,10 +187,12 @@ class openvpn_allocator:
         vpn_cnt = len(memberOf)
 
         if vpn_cnt == 0:
-            return self.no_subnet("No VPN group membership")
+            print "No VPN group membership"
+            return 0
         
-        # for each VPN membership, get the subnet from the info field
-        subnet_list = []
+        # for each VPN membership, get the access policy from the
+        # group info (Notes) field
+        access_list = []
         for base_dn in memberOf:
             if debug: print "processing group %s" % base_dn
             try:
@@ -204,24 +209,26 @@ class openvpn_allocator:
             info = res[0][1]['info'][0]
             if debug == 2: print "info field:\n%s\n" % info
 
-            # Be flexible about subnet specification in info field
-            re_subnet = re.compile(r"net[^0-9]*[ =:](\d+\.\d+\.\d+)(?:$|\s)",
-                               re.IGNORECASE)
-            re_matches = re_subnet.findall(info)
-            if debug == 2: print "adding subnet data: %s" % str(re_matches)
-            subnet_list += re_matches
+            # Be flexible about access number in the info field
+            re_matches = re_access.findall(info)
+            if debug == 2: print "adding access data: %s" % str(re_matches)
+            access_list += re_matches
 
         con.unbind()
 
-        if len(subnet_list) == 0:
-            return self.no_subnet("No VPN group membership")
+        if len(access_list) == 0:
+            print "No access controls found in VPN group(s)"
+            return 0
 
-        # Prefer the lowest subnet (policy makes it the highest priveledge)
-        subnet_list.sort(cmp=ip_cmp)
+        # Prefer the lowest access number (highest priveledge)
+        access_list = [int(x) for x in access_list]
+        access_list.sort()
 
-        if debug == 2: print "full subnet_list:", subnet_list
-        if debug: print "setting subnet to %s" % subnet_list[0]
-        self.subnet = subnet_list[0]
+        if debug: print "full access_list:", access_list
+
+        # TODO: fix
+        self.subnet = "%s.%d" % (self.full_subnet, access_list[0])
+        if debug: print "setting subnet to %s" % self.subnet
         return 1
 
     def allocate_client(self):
@@ -230,6 +237,7 @@ class openvpn_allocator:
         lease={}
         pool=[]
         if debug == 2: print "Status file:"
+        self.read_status()
         for line in self.status:
             line = line.strip()
             if line.startswith(net):

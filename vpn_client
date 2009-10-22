@@ -7,10 +7,12 @@ usage="""
 Usage: ${NAME} [-v] new common_name email
        ${NAME} [-v] cert common_name email
        ${NAME} [-v] pkg common_name
+       ${NAME} [-v] router common_name
        ${NAME} [-v] revoke common_name
        ${NAME} [-v] show-cert [common_name]
        ${NAME} [-v] show-access
        ${NAME} [-v] show-active
+       ${NAME} [-v] new-ca
 
    -v            verbose output
    -h | --help   show detailed help
@@ -26,32 +28,45 @@ revoke), create a Windows OpenVPN installer for a client, or show
 information about client certificates.
 
 ${NAME} new
-    generate a new client certificate for 'common_name'
+    Generate a new client certificate for 'common_name'
     and create a Windows installer package containing that
     certificate. The 'email' address will be encoded in the
     certificate.
 
 ${NAME} cert
-    only create a new client certificate for 'common_name'. The
+    Only create a new client certificate for 'common_name'. The
     'email' address will be encoded in the certificate.
 
 ${NAME} pkg
-    only create the Windows installer package using a existing
+    Only create the Windows installer package using a existing
     certificate.
 
 ${NAME} revoke
-    revoke the certificate for 'common_name' and update the CRL
+    Revoke the certificate for 'common_name' and update the CRL
     (certificate revocation list) file and copy it to the server.
 
 ${NAME} show-cert
-    list valid, expired and revoked certificates. If 'common_name' is
-    specified then only show certificates for that client.
+    List valid, expired and revoked certificates. If 'common_name'
+    is specified then only show certificates for that client.
 
 ${NAME} show-access
-    show connect/disconnect access log for all servers
+    Show connect/disconnect access log for all servers
 
 ${NAME} show-active
-    show current active connections for all servers
+    Show current active connections for all servers
+
+${NAME} new-ca
+    Generate a new Certificate Authority and related files. The
+    new CA cert (ca.crt), server cert (server.crt), server key
+    (server.key), Diffie Hellman parameters (dh1024.pem), tlsauth
+    static key (ta.key), and certificate revocation list file
+    (crl.pem) should be copied to the server(s).
+    The CA key should NOT be copied to the server. All client
+    certs/keys must also be re-issued.
+
+    WARNING: This command invalidates all existing server and
+    client keys. For this reason you must manually remove the keys
+    and packages subdirectory before this command will run.
 
 Requirements:
 
@@ -62,17 +77,30 @@ Requirements:
     - zip:        to compress NSIS *.exe
 
   - files in the keys directory:
-    - root CA files (ca.crt, ca.key) and static shared key (ta.key)
+    - root CA files (ca.crt, ca.key) and tlsauth static key (ta.key)
+
+  - files in the vpn_config directory:
     - openssl.cnf file (from openvpn's easy-rsa v2.0 directory)
     - openvpn client config file (client.ovpn)
 """
 
 # Default settings
 VERBOSE=${VERBOSE:-}
+ldapuri="ldap://172.20.1.100" 
+ldapuser="vpnquery"
+ldappass="secret"
+ldapbase="dc=dept,dc=example,dc=com"
+ldapbinddn="cn=${ldapuser},cn=Users,${ldapbase}"
+serv_host="openvpn.example.com"
+serv_user="openvpn"
+serv_crl_path="/etc/openvpn/crl.pem"
+
+# Paths and commands
 top=$(readlink -f $(dirname ${0}))
-key_dir=${top}/keys/
-key_config=${top}/config/openssl.cnf
-pkgdir=${top}/packages
+key_dir=${top}/keys
+cfg_dir=${top}/config/
+key_config=${cfg_dir}/openssl.cnf
+pkg_dir=${top}/packages
 makensis=${makensis:-makensis}
 zip=${zip:-zip}
 findpkg=$(dirname ${top}/*/openvpn-gui.nsi | tail -n1)
@@ -80,21 +108,14 @@ nsis_dir=${nsis_dir:-${findpkg}}
 nsis_file=${nsis_dir}/openvpn-gui.nsi
 ldapsearch=${ldapsearch:-ldapsearch}
 
-ldapuri="ldap://172.20.1.100" 
-ldapuser="vpnquery"
-ldappass="secret"
-ldapbase="dc=dept,dc=example,dc=com"
-ldapbinddn="cn=${ldapuser},cn=Users,${ldapbase}"
 ldapcmd="${ldapsearch} -LLL -x -H ${ldapuri} -D ${ldapbinddn} \
          -w ${ldappass} -b ${ldapbase}"
-serv_host="openvpn.example.com"
-serv_user="openvpn"
-serv_crl_path="/etc/openvpn/crl.pem"
 
 # Default settings that affect openssl.cnf.
 export KEY_DIR="${key_dir}"
 export KEY_OU=""
-export KEY_SIZE=1024
+export KEY_SIZE=2048
+export CA_EXPIRE=3650  # 10 years
 export KEY_EXPIRE=730  # 2 years
 export KEY_CITY="DALLAS"
 export KEY_PROVINCE="TX"
@@ -140,7 +161,7 @@ yesno() {
 trap_list="TERM QUIT INT EXIT"
 mypid=$$
 lock() {
-    local path=$1 owner=
+    local path=${1%/}.lock owner=
 
     vecho >&2 "Locking ${path}"
     if [ -L ${path} ]; then
@@ -156,13 +177,14 @@ lock() {
         fi
     fi
     if ln -s ${mypid} ${path} 2>/dev/null; then
-        trap "unlock_trap ${path}" ${trap_list}
+        trap "unlock_trap ${1}" ${trap_list}
     else
         die "Failed to obtain lock on ${path}"
     fi
 }
 unlock() {
     local path=$1 owner=
+    path=${path%/}.lock
 
     # Don't quote trap_list, they're multiple args
     trap - ${trap_list}
@@ -191,6 +213,8 @@ unlock_trap() {
 # root certificate and convert it to a PKCS #12 file including the
 # the CA certificate as well.
 gen_cert() {
+    cd ${key_dir} || die
+
     echo -e "\n>>> Generating certificate request"
     openssl req -batch -nodes -days ${KEY_EXPIRE} \
         -new -newkey rsa:${KEY_SIZE} \
@@ -198,11 +222,11 @@ gen_cert() {
         -config ${key_config} \
         || die "Failed to generate certificate request"
 
-    echo -e "\n>>> Generating signed certificate from request"
+    echo -e "\n>>> Generating certificate from request"
     openssl ca -batch -md sha1 -days ${KEY_EXPIRE} \
-         -in "${name}.csr" -out "${name}.crt"\
+        -in "${name}.csr" -out "${name}.crt" \
         -config ${key_config} \
-        || die "Failed to generated signed certificate from request"
+        || die "Failed to generated certificate from request"
 
     echo -e "\n>>> Generating pkcs12 certificate"
     openssl pkcs12 -nodes -export \
@@ -211,10 +235,59 @@ gen_cert() {
         -passout pass:${key_password} \
         || die "Failed to generate pkcs12 cerficate"
 
-    chmod 0600 "${name}.p12"
+    chmod 0600 "${name}.p12" "${name}.key" || die
 
     [ -s "${name}.p12" ] \
         || die "Failed: pkcs12 key ${name}.p12 is zero size"
+}
+
+# Generate a new Certificate Authority and server cert/key
+gen_ca() {
+
+    mkdir -p ${key_dir} ${pkg_dir}
+    touch ${key_dir}/index.txt || die
+    echo "00" > ${key_dir}/serial || die
+    cd ${key_dir} || die
+
+    echo -e "\n>>> Generating new certificate authority"
+    openssl req -batch -nodes -days $CA_EXPIRE \
+        -new -newkey rsa:$KEY_SIZE -sha1 -x509 \
+        -keyout "ca.key" -out "ca.crt" \
+        -config "$key_config" \
+        || die "Failed to generate CA cert/key"
+
+    [ -s "ca.key" ] \
+        || die "Failed: CA key ca.key is zero size"
+
+    echo -e "\n>>> Generating server certificate request"
+    openssl req -batch -nodes -days ${KEY_EXPIRE} \
+        -new -newkey rsa:${KEY_SIZE} \
+        -keyout "server.key" -out "server.csr" \
+        -extensions server \
+        -config ${key_config} \
+        || die "Failed to generate server certificate request"
+
+    echo -e "\n>>> Generating server certificate from request"
+    openssl ca -batch -md sha1 -days ${CA_EXPIRE} \
+        -in "server.csr" -out "server.crt" \
+        -extensions server \
+        -config ${key_config} \
+        || die "Failed to generate server certificate"
+
+    echo -e "\n>>> Generating empty CRL file"
+    openssl ca -gencrl -out "crl.pem" -config ${key_config} \
+        || die "Failed to generate empty CRL file"
+
+    echo -e "\n>>> Generating TLSAUTH static key"
+    openvpn --genkey --secret ta.key \
+        || die "Failed to generate TLSAUTH static key"
+
+    echo -e "\n>>> Generating Diffie Hellman parameters"
+    openssl dhparam -out "dh1024.pem" 1024 \
+        || die "Failed to generate DH parameters"
+
+    chmod 0600 *.key || die "Could not set key permissions"
+
 }
 
 # Generate the Windows installer package
@@ -227,24 +300,24 @@ gen_pkg() {
         || die "Could not copy pkgcs12 cert (${name}.p12)"
 
     # Copy the the config and static key
-    cp ${key_dir}/client.ovpn ${nsis_dir}/openvpn/config/client.ovpn \
+    cp ${cfg_dir}/client.ovpn ${nsis_dir}/openvpn/config/client.ovpn \
         || die "Could not copy client config (client.ovpn)"
     cp ${key_dir}/ta.key ${nsis_dir}/openvpn/config/ta.key \
         || die "Could not copy static key (ta.key)"
 
     echo -e "\n>>> Generating NSIS OpenVPN package"
-    vecho "makensis ${nsis_file} \"-XOutFile ${pkgdir}/${pkg}.exe\""
+    vecho "makensis ${nsis_file} \"-XOutFile ${pkg_dir}/${pkg}.exe\""
     if [ "${VERBOSE}" ]; then
-        ${makensis} ${nsis_file} "-XOutFile ${pkgdir}/${pkg}.exe" \
+        ${makensis} ${nsis_file} "-XOutFile ${pkg_dir}/${pkg}.exe" \
             || die "Failed to create nsis package"
     else
-        ${makensis} ${nsis_file} "-XOutFile ${pkgdir}/${pkg}.exe" \
+        ${makensis} ${nsis_file} "-XOutFile ${pkg_dir}/${pkg}.exe" \
             >/dev/null || die "Failed to create nsis package"
     fi
 
     # Zip it so that email programs will allow it through
     echo -e "\n>>> Zipping NSIS OpenVPN package"
-    cd ${pkgdir} || die "Failed to cd to ${pkgdir} for zip"
+    cd ${pkg_dir} || die "Failed to cd to ${pkg_dir} for zip"
     rm -f ${pkg}.zip
     zip ${pkg}.{zip,exe} || die "failed to zip"
 
@@ -252,12 +325,14 @@ gen_pkg() {
 #    # Create a tarball of the config for Linux users
 #    echo -e "\n>>> Creating config tarball for Linux users"
 #    cd ${nsis_dir} || die "Failed to cd to ${nsis_dir}/openvpn"
-#    tar czf ${pkgdir}/openvpn-${name}-config.tgz openvpn/config \
+#    tar czf ${pkg_dir}/openvpn-${name}-config.tgz openvpn/config \
 #        || die "failed to create config tarbal/"
 }
 
 # Add the client to the CRL
 revoke_cert() {
+    cd ${key_dir} || die
+
     echo -e "\n>>> Marking certificate as revoked"
     openssl ca -revoke "${name}.crt" -config ${key_config} \
         || die "Failed mark certificate as revoked"
@@ -270,6 +345,21 @@ revoke_cert() {
     cat ca.crt crl.pem > revoke-test.pem
     openssl verify -CAfile revoke-test.pem -crl_check "${name}.crt" \
         || die "Failed to verify revocation"
+}
+
+# Verify that the keys directory is sane
+check_dirs() {
+    # Make sure the key directory is sane
+    [ -d "${key_dir}" ] || die "Keys directory '${key_dir}' does not exist"
+    [ -w "${key_dir}" ] || die "Keys directory '${key_dir}' is read-only"
+    [ -w "${key_dir}/index.txt" ] \
+        || die "Index file ${key_dir}/index.txt is missing or read-only"
+    [ -w "${key_dir}/serial" ] \
+        || die "Serial file ${key_dir}/serial is missing or read-only"
+    # Verify other directories
+    [ -d "${pkg_dir}" ] || die "Could not find '${pkg_dir}'"
+    [ -w "${pkg_dir}" ] || die "Keys directory '${pkg_dir}' is read-only"
+
 }
 
 # Verify that the certificate is valid
@@ -442,7 +532,13 @@ command=$1; shift
 case ${command} in
 new|cert)
     [ ${#} -gt 2 ] && usage "Too many parameters"
-    name=$1; email=$2 ;;
+    name=$1; email=$2
+    export KEY_CN="${name}"
+    export KEY_EMAIL="${email}" ;;
+new-ca)
+    [ ${#} -gt 0 ] && usage "Too many parameters"
+    export KEY_CN="${serv_host}"
+    export KEY_EMAIL="admin@example.com" ;;
 pkg|package|revoke|show-cert*|show-access*|show-active)
     [ ${#} -gt 1 ] && usage "Too many parameters"
     name=$1  ;;
@@ -453,8 +549,6 @@ esac
 # Export parameter derived variables
 key_password=$(date +%Y)_${name}
 servers=$(host -t A ${serv_host} | awk '{print $4}')
-export KEY_CN="${name}"
-export KEY_EMAIL="${email}"
 
 
 # Sanity checks
@@ -462,18 +556,12 @@ which ${makensis} &>/dev/null || die "${makensis} command not found"
 which ${zip} &>/dev/null || die "${zip} command not found"
 which ${ldapsearch} &>/dev/null || die "${ldapsearch} command not found"
 [ -d "${top}" ] || die "Could not find ${top}"
-[ -d "${pkgdir}" ] || die "Could not find ${pkgdir}"
 [ -d "${nsis_dir}" ] || die "Could not find openvpn NSIS directory"
 [ -e "${nsis_file}" ] || die "Could not find openvpn-gui.nsi"
 [ "${servers}" ] || die "Could not resolve ${serv_host}"
-
-# Make sure the key directory is sane
-[ -d "${key_dir}" ] || die "Keys directory '${key_dir}' does not exist"
-[ -w "${key_dir}" ] || die "Keys directory '${key_dir}' is read-only"
-[ -w "${key_dir}/index.txt" ] \
-    || die "Index file ${key_dir}/index.txt is missing or read-only"
-[ -w "${key_dir}/serial" ] \
-    || die "Serial file ${key_dir}/serial is missing or read-only"
+[ -d "${cfg_dir}" ] || die "Could not find ${cfg_dir}"
+[ -e "${cfg_dir}/client.ovpn" ] \
+    || die "Could not find ${cfg_dir}/client.ovpn"
 [ -e "${key_config}" ] || die "Missing config file ${key_config}"
 
 # Output settings if verbose output requested
@@ -503,6 +591,7 @@ new|cert)    # New certificate checks
     [ "${name}" ] || usage "You must specify an account name"
     [ "${email}" ] || usage "You must specify an email address"
     [ "${email/@/}" ] || usage "Invalid email: ${email}"
+    check_keys_dir
 
     # Check to make sure there isn't an active key for this user
     if cut -f1,3,6 --output-delimiter=":" ${key_dir}/index.txt \
@@ -550,8 +639,21 @@ new|cert)    # New certificate checks
     echo >&2
     ;;
 
+new-ca)       # New certificate authority checks
+    [ -e "${key_dir}" ] \
+        && die "${key_dir} exists, refusing to create new CA"
+    [ -e "${pkg_dir}" ] \
+        && die "${pkg_dir} exists, refusing to create new CA"
+
+    # Final confirmation
+    echo >&2 "*** Create a new CA and server cert/key"
+    yesno "*** Continue (y/n)? " || exit 0
+    echo >&2
+
+    ;;
 pkg|package)   # New Windows package only checks
     [ "${name}" ] || usage "You must specify an account name"
+    check_keys_dir
     # Check to make sure there is an active key for this user
     check_valid_cert ${name}
     [ -e "${key_dir}/${name}.p12" ] \
@@ -565,6 +667,7 @@ pkg|package)   # New Windows package only checks
 
 revoke)   # Revoke a certificate
     [ "${name}" ] || usage "You must specify an account name"
+    check_keys_dir
     # Check to make sure there is an active key for this user
     check_valid_cert ${name}
 
@@ -575,6 +678,7 @@ revoke)   # Revoke a certificate
     echo >&2
     ;;
 show-cert|show-certs)    # Show certificates
+    check_keys_dir
     ;;
 show-access|show-acrive) # Show server access information
     ;;
@@ -585,33 +689,38 @@ esac
 # Now the real work
 # -----------------------------------------------------------------------
 
-cd ${key_dir} || die
 
 case ${command} in
     new)
-        lock ${key_dir}/.lock
+        lock ${key_dir}
         gen_cert
         gen_pkg
-        unlock ${key_dir}/.lock
+        unlock ${key_dir}
         echo -e "\n>>> Successfully created new client"
         ;;
+    new-ca)
+        lock ${key_dir}
+        gen_ca
+        unlock ${key_dir}
+        echo -e "\n>>> Successfully created new Certificate Authority"
+        ;;
     cert)
-        lock ${key_dir}/.lock
+        lock ${key_dir}
         gen_cert
-        unlock ${key_dir}/.lock
+        unlock ${key_dir}
         echo -e "\n>>> Successfully created new certificate"
         ;;
     pkg)
-        lock ${key_dir}/.lock
+        lock ${key_dir}
         gen_pkg
-        unlock ${key_dir}/.lock
+        unlock ${key_dir}
         echo -e "\n>>> Successfully created new installer package"
         ;;
     revoke)
-        lock ${key_dir}/.lock
+        lock ${key_dir}
         revoke_cert
         copy_crl
-        unlock ${key_dir}/.lock
+        unlock ${key_dir}
         echo -e "\n>>> Successfully revoked certificate"
         ;;
     show-cert|show-certs)

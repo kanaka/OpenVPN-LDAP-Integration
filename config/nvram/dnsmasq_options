@@ -1,0 +1,5 @@
+strict-order
+server=/openvpn.example.com/208.67.222.222
+server=/example.com/192.168.19.100
+server=//192.168.19.100
+server=/20.172.in-addr.arpa/192.168.19.100

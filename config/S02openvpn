@@ -1,0 +1,48 @@
+#!/bin/sh
+
+nvram_update() {
+    # Each file in the config dir is named for an nvram variable and
+    # contains the value that it should be set to.
+    echo "First boot, updating all VPN settings"
+    for var in `ls $conf`; do
+        val="`cat $conf/$var`"
+        echo "nvram set $var=$val"
+        nvram set $var="$val"
+    done
+
+    echo "Updating /tmp/etc/passwd"
+    passwd="`cat $conf/http_passwd`"
+    sed -i "s@root:[^:]*:@root:$passwd:@" /tmp/etc/passwd
+    sed -i "s@reboot:[^:]*:@root:$passwd:@" /tmp/etc/passwd
+
+    echo "nvram set vpn_configured=1"
+    nvram set vpn_configured=1
+    echo "nvram commit"
+    nvram commit                   # Commit any changes
+}
+
+route_update() {
+    local script=/tmp/openvpn/route-up2.sh
+    echo "Creating $script"
+    mkdir -p /tmp/openvpn
+    echo "iptables -I FORWARD -i br1 -o tun0 -j ACCEPT" > $script
+    echo "iptables -t nat -A POSTROUTING -s 192.168.2.0/24 -o tun0 -j MASQUERADE" >> $script
+    echo "iptables -t nat -A POSTROUTING -s 192.168.3.0/24 -o tun0 -j MASQUERADE" >> $script
+    chmod +x $script
+}
+
+conf=`dirname $0`/../openvpn
+
+# If this is the first boot after an nvram reset, then reset VPN
+# settings, otherwise just exit.
+if [ -z "`nvram get vpn_configured`" ]; then
+    nvram_update 2>&1 |tee -a /tmp/S02openvpn.log
+fi
+
+if [ ! -e /tmp/openvpn/route-up2.sh ]; then
+    route_update 2>&1 |tee -a /tmp/S02openvpn.log
+fi
+
+echo "Finished"
+exit 0
+
