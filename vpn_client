@@ -1,20 +1,123 @@
 #!/bin/bash
 
-# Generate a client certificate/key and then build an installable
-# Windows OpenVPN client package using that client cert/key.
-#
 # Written by Joel Martin <joel_martin@sil.org>
-#
-# Requirements:
-#   - openvpn package: pkitool and openssl.cnf ('easy-rsa/2.0' dir)
-#   - nsis package: makensis program
-#   - root certificate authority files (ca.crt, ca.key) in keys dir
 
+NAME=$(basename ${0})
+usage="""
+Usage: ${NAME} [-v] new common_name email
+       ${NAME} [-v] cert common_name email
+       ${NAME} [-v] pkg common_name
+       ${NAME} [-v] revoke common_name
+       ${NAME} [-v] show-cert [common_name]
+       ${NAME} [-v] show-access
+       ${NAME} [-v] show-active
+
+   -v            verbose output
+   -h | --help   show detailed help
+   common_name   create certificate and NSIS package for
+                 Active Directory account 'common_name'
+   email         email address for common_name
+"""
+usage2="""
+OpenVPN client certificate management program.
+
+${NAME} can be used to generate or revoke a client certificate,
+revoke), create a Windows OpenVPN installer for a client, or show
+information about client certificates.
+
+${NAME} new
+    generate a new client certificate for 'common_name'
+    and create a Windows installer package containing that
+    certificate. The 'email' address will be encoded in the
+    certificate.
+
+${NAME} cert
+    only create a new client certificate for 'common_name'. The
+    'email' address will be encoded in the certificate.
+
+${NAME} pkg
+    only create the Windows installer package using a existing
+    certificate.
+
+${NAME} revoke
+    revoke the certificate for 'common_name' and update the CRL
+    (certificate revocation list) file and copy it to the server.
+
+${NAME} show-cert
+    list valid, expired and revoked certificates. If 'common_name' is
+    specified then only show certificates for that client.
+
+${NAME} show-access
+    show connect/disconnect access log for all servers
+
+${NAME} show-active
+    show current active connections for all servers
+
+Requirements:
+
+  - Packages:
+    - openssl:    key management
+    - ldap-utils: ldapsearch command to verify users
+    - nsis:       makensis to create Windows NSIS package
+    - zip:        to compress NSIS *.exe
+
+  - files in the keys directory:
+    - root CA files (ca.crt, ca.key) and static shared key (ta.key)
+    - openssl.cnf file (from openvpn's easy-rsa v2.0 directory)
+    - openvpn client config file (client.ovpn)
+"""
+
+# Default settings
 VERBOSE=${VERBOSE:-}
+top=$(readlink -f $(dirname ${0}))
+key_dir=${top}/keys/
+key_config=${top}/config/openssl.cnf
+pkgdir=${top}/packages
+makensis=${makensis:-makensis}
+zip=${zip:-zip}
+findpkg=$(dirname ${top}/*/openvpn-gui.nsi | tail -n1)
+nsis_dir=${nsis_dir:-${findpkg}}
+nsis_file=${nsis_dir}/openvpn-gui.nsi
+ldapsearch=${ldapsearch:-ldapsearch}
 
+ldapuri="ldap://172.20.1.100" 
+ldapuser="vpnquery"
+ldappass="secret"
+ldapbase="dc=dept,dc=example,dc=com"
+ldapbinddn="cn=${ldapuser},cn=Users,${ldapbase}"
+ldapcmd="${ldapsearch} -LLL -x -H ${ldapuri} -D ${ldapbinddn} \
+         -w ${ldappass} -b ${ldapbase}"
+serv_host="openvpn.example.com"
+serv_user="openvpn"
+serv_crl_path="/etc/openvpn/crl.pem"
+
+# Default settings that affect openssl.cnf.
+export KEY_DIR="${key_dir}"
+export KEY_OU=""
+export KEY_SIZE=1024
+export KEY_EXPIRE=730  # 2 years
+export KEY_CITY="DALLAS"
+export KEY_PROVINCE="TX"
+export KEY_COUNTRY="US"
+export KEY_ORG="EXAMPLE COMPANY"
+export PKCS11_MODULE_PATH= # Needed for generic openssl.cnf
+export PKCS11_PIN= # Needed for generic openssl.cnf
+
+# -----------------------------------------------------------------------
 # Utility routines
+# -----------------------------------------------------------------------
 die() { echo >&2 -e "$*"; exit 1; }
 vecho() { [ "${VERBOSE}" ] && echo "$*"; }
+usage() {
+    [ "$*" ] && echo >&2 -e "$*"
+    echo >&2 "${usage}"
+    die
+}
+vusage() {
+    echo >&2 "${usage}"
+    echo >&2 "${usage2}"
+    die
+}
 
 # returns 0 for 'yes' or 1 for 'no'
 yesno() {
@@ -29,76 +132,361 @@ yesno() {
     done
 }
 
-usage() {
-    echo >&2 "$*"
-    echo >&2
-    echo >&2 "Usage: $(basename ${0}) [-v] common_name email"
-    echo >&2 "  -v           verbose output"
-    echo >&2 "  common_name  create cert/key and NSIS package for"
-    echo >&2 "               Active Directory account common_name"
-    echo >&2 "  email        email address for common_name"
+# Lock routines to make sure there is only one caller at a time.
+# This locking strategy uses a symlink (because creation is atomic)
+# that contains the pid of the current owner of the lock. That way
+# stale locks can be cleaned up by checking if the process is still
+# running.
+trap_list="TERM QUIT INT EXIT"
+mypid=$$
+lock() {
+    local path=$1 owner=
+
+    vecho >&2 "Locking ${path}"
+    if [ -L ${path} ]; then
+        # Lock exists, if locker is gone, remove the lock
+        owner=$(readlink ${path})
+        if ps ax | grep -qs "^ *${owner:-NONE}.*${NAME}"; then
+            echo >&2 "Somebody else is running this program (pid: ${owner})"
+            echo >&2 "Simultaneous use can cause corruption"
+            die "Please wait and then try again."
+        else
+            echo "Removing stale lock on ${path} (pid: ${owner})"
+            rm ${path}
+        fi
+    fi
+    if ln -s ${mypid} ${path} 2>/dev/null; then
+        trap "unlock_trap ${path}" ${trap_list}
+    else
+        die "Failed to obtain lock on ${path}"
+    fi
+}
+unlock() {
+    local path=$1 owner=
+
+    # Don't quote trap_list, they're multiple args
+    trap - ${trap_list}
+
+    owner=$(readlink ${path})
+    vecho >&2 "Unlocking ${path}"
+    if [ "${owner}" == "${mypid}" ]; then
+        rm -f ${path}
+    else
+        die "Lock corruption on ${path}!! (us: ${mypid}, owner ${owner}"
+    fi
+}
+unlock_trap() {
+    vecho >&2 "Caught signal, cleaning up."
+    # TODO: put the key dir back the way it was if failures
+    unlock $1
     die
 }
 
-# Derive some settings
-top=$(readlink -f $(dirname ${0}))
-pkgdir=${top}/packages
-findssl=$(ls -d /usr/share/doc/openvpn*/{,*/}easy-rsa/2.0/ 2>/dev/null |tail -n1)
-PKITOOL=${PKITOOL:-${findssl}/pkitool}
-SSL_CONF=${SSL_CONF:-${findssl}/openssl.cnf}
-MAKENSIS=${MAKENSIS:-makensis}
-findpkg=$(dirname ${top}/*/openvpn-gui.nsi | tail -n1)
-NSIS_DIR=${NSIS_DIR:-${findpkg}}
-NSIS_FILE=${NSIS_DIR}/openvpn-gui.nsi
+
+# -----------------------------------------------------------------------
+# Certificate and packaging routines
+# -----------------------------------------------------------------------
+
+# Make a certificate/private key pair using a locally generated
+# root certificate and convert it to a PKCS #12 file including the
+# the CA certificate as well.
+gen_cert() {
+    echo -e "\n>>> Generating certificate request"
+    openssl req -batch -nodes -days ${KEY_EXPIRE} \
+        -new -newkey rsa:${KEY_SIZE} \
+        -keyout "${name}.key" -out "${name}.csr" \
+        -config ${key_config} \
+        || die "Failed to generate certificate request"
+
+    echo -e "\n>>> Generating signed certificate from request"
+    openssl ca -batch -md sha1 -days ${KEY_EXPIRE} \
+         -in "${name}.csr" -out "${name}.crt"\
+        -config ${key_config} \
+        || die "Failed to generated signed certificate from request"
+
+    echo -e "\n>>> Generating pkcs12 certificate"
+    openssl pkcs12 -nodes -export \
+        -inkey "${name}.key" -in "${name}.crt" \
+        -certfile "ca.crt" -out "${name}.p12" \
+        -passout pass:${key_password} \
+        || die "Failed to generate pkcs12 cerficate"
+
+    chmod 0600 "${name}.p12"
+
+    [ -s "${name}.p12" ] \
+        || die "Failed: pkcs12 key ${name}.p12 is zero size"
+}
+
+# Generate the Windows installer package
+gen_pkg() {
+    local pkg=openvpn-${name}-install
+    # Now build the Windows package using that key
+    echo -e "\n>>> Copying data files into NSIS OpenVPN package"
+    # Copy the pkcs12 cert/key just generated into the NSIS config
+    cp ${key_dir}/${name}.p12 ${nsis_dir}/openvpn/config/client.p12 \
+        || die "Could not copy pkgcs12 cert (${name}.p12)"
+
+    # Copy the the config and static key
+    cp ${key_dir}/client.ovpn ${nsis_dir}/openvpn/config/client.ovpn \
+        || die "Could not copy client config (client.ovpn)"
+    cp ${key_dir}/ta.key ${nsis_dir}/openvpn/config/ta.key \
+        || die "Could not copy static key (ta.key)"
+
+    echo -e "\n>>> Generating NSIS OpenVPN package"
+    vecho "makensis ${nsis_file} \"-XOutFile ${pkgdir}/${pkg}.exe\""
+    if [ "${VERBOSE}" ]; then
+        ${makensis} ${nsis_file} "-XOutFile ${pkgdir}/${pkg}.exe" \
+            || die "Failed to create nsis package"
+    else
+        ${makensis} ${nsis_file} "-XOutFile ${pkgdir}/${pkg}.exe" \
+            >/dev/null || die "Failed to create nsis package"
+    fi
+
+    # Zip it so that email programs will allow it through
+    echo -e "\n>>> Zipping NSIS OpenVPN package"
+    cd ${pkgdir} || die "Failed to cd to ${pkgdir} for zip"
+    rm -f ${pkg}.zip
+    zip ${pkg}.{zip,exe} || die "failed to zip"
+
+# TODO: create *.ovpn file for Linux users and package it
+#    # Create a tarball of the config for Linux users
+#    echo -e "\n>>> Creating config tarball for Linux users"
+#    cd ${nsis_dir} || die "Failed to cd to ${nsis_dir}/openvpn"
+#    tar czf ${pkgdir}/openvpn-${name}-config.tgz openvpn/config \
+#        || die "failed to create config tarbal/"
+}
+
+# Add the client to the CRL
+revoke_cert() {
+    echo -e "\n>>> Marking certificate as revoked"
+    openssl ca -revoke "${name}.crt" -config ${key_config} \
+        || die "Failed mark certificate as revoked"
+
+    echo -e "\n>>> Generating updated CRL file"
+    openssl ca -gencrl -out "crl.pem" -config ${key_config} \
+        || die "Failed to generate updated CRL file"
+
+    echo -e "\n>>> Verifying revocation"
+    cat ca.crt crl.pem > revoke-test.pem
+    openssl verify -CAfile revoke-test.pem -crl_check "${name}.crt" \
+        || die "Failed to verify revocation"
+}
+
+# Verify that the certificate is valid
+check_valid_cert() {
+    # Check to make sure there is an active key for this user
+    if cut -f1,3,6 --output-delimiter=":" ${key_dir}/index.txt \
+            | grep -qs "^V::.*CN=${name}/"; then
+        # We found one to revoke
+        true
+    else
+        die "No valid certificate for ${name} found in" \
+            "${key_dir}/index.txt"
+    fi
+}
+
+# Copy the CRL file to the server
+copy_crl() {
+    local server
+    for server in ${servers}; do
+        scp_dest="${serv_user}@${server}:${serv_crl_path}"
+        echo -e "\n>>> Copying CRL file to ${scp_dest}"
+        vecho "scp -o BatchMode=yes ${key_dir}/crl.pem ${scp_dest}"
+        scp -o BatchMode=yes ${key_dir}/crl.pem ${scp_dest} \
+            || die "Failed to copy CRL to ${scp_dest}"
+    done
+}
+
+# Show certificate information
+# Expire timestamps are "YYMMDDhhmmssZ" (ASN1_UTCTIME)
+show_cert() {
+    local status d d1 d2 serial unknown client user email state
+    local date_asn1 date_unix date_short now date_days
+    local pre valid expired revoked
+    now=$(date +%s)
+    while read status d1 d2 serial unknown client; do
+        case ${status} in
+            V|E) d=${d1} client=${unknown#*CN=} serial=${d2} ;;
+            R)   d=${d2} client=${client#*CN=} ;;
+            *)   die "Bogus data in ${key_dir}/index.txt" ;;
+        esac
+        user=${client%/email*}
+        email=${client#*/emailAddress=}
+
+        # If name is set, then skip everything else
+        [ "${name}" ] && [ "${name}" != "${user}" ] && continue
+
+        # Process the date stamp
+        date_asn1=$(date -d "${d:0:6} ${d:6:2}:${d:8:2}:${d:10:2}")
+        date_unix=$(date +%s -d "${date_asn1}")
+        date_short=$(date +"%Y-%m-%d" -d "${date_asn1}")
+        date_days=$(( (date_unix - now) / (60*60*24) ))
+
+        # user readable state
+        title=$(printf "  NUMBER   %-40s STATUS" "USERNAME <EMAIL>")
+        pre=$(printf   "  0x%-04x   %-40s" 0x${serial} "${user} <${email}>")
+        if [ "${status}" = "R" ]; then
+            revoked="${revoked}${pre} revoked on ${date_short}\n"
+        elif [ "${date_days}" -lt 0 ]; then
+            expired="${expired}${pre} expired on ${date_short}\n"
+        else
+            valid="${valid}${pre} ${date_days} days left (${date_short})\n"
+        fi
+
+    done < ${key_dir}/index.txt
+    echo
+    [ "${revoked}" ] && echo -e "Revoked:\n${title}\n${revoked}"
+    [ "${expired}" ] && echo -e "Expired:\n${title}\n${expired}"
+    [ "${valid}" ] && echo -e "Valid:\n${title}\n${valid}"
+}
+
+show_access_log() {
+    local server raw data data_sorted user ip
+    local d1 d2 d3 d4 d5 ignore who type rest
+    local date_unix vip line
+    for server in ${servers}; do
+        raw="${data}$(ssh -o BatchMode=yes ${serv_user}@${server} \
+            'egrep -h "SENT|SIGUSR1" /var/log/openvpn.log*')" \
+            || die "Failed to get data from ${ssh_dest}"
+        while read d1 d2 d3 d4 d5 ignore who type rest; do
+            user=${who%/*}
+            date_unix=$(date +%s -d "$d1 $d2 $d3 $d4 $d5")
+            ip=${who#*/} ip=${ip%:*}
+            case ${type} in 
+                SENT)    vip=${rest#*ifconfig } vip=${vip%% *} type="Opened" ;;
+                SIGUSR*) vip= type="Closed" ;;
+            esac
+            data="$data$date_unix $type $user $ip $server $vip\n"
+        done <<< "${raw}"
+    done
+    data_sorted="$(echo -e "${data}" | sort -n)"
+    printf "%-19s  %-6s  %-15s %-15s %-15s %s\n" \
+        "Connect Time" \
+        "Status" \
+        "User" \
+        "Server IP" \
+        "Client IP" \
+        "Virutal IP"
+    while read date_unix type user ip server vip; do
+        [ "${date_unix}" ] || continue
+        date=$(date +"%a %b %_d %T" -d "@${date_unix}")
+        printf "%-19s  ${type}  %-15s %-15s %-15s %s\n" \
+            "${date}" \
+            "${user}" \
+            "${server}" \
+            "${ip}" \
+            "${vip}"
+    done <<< "${data_sorted}"
+}
+
+show_active() {
+    local server raw user ip vip inb outb date route
+    printf "%-15s %-15s %-15s %s\n" \
+           "User" \
+           "Server IP" \
+           "Client IP" \
+           "Connect Time"
+    printf "%-15s %-15s %-15s %s\n" \
+           " " \
+           " " \
+           "Virtual IP" \
+           "Bytes In / Bytes Out"
+    printf "%-15s %-15s %-15s %s\n" \
+           "---------------" \
+           "---------------" \
+           "---------------" \
+           "--------------------"
+    for server in ${servers}; do
+        raw="$(ssh -o BatchMode=yes ${serv_user}@${server} \
+            'egrep ",[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:" \
+            /var/run/openvpn/openvpn-status.log')" \
+            || die "Failed to get data from ${server}"
+        while read user ip inb outb date; do
+            echo "${user}" | grep -qs "^[0-9\.]*$" && continue
+            route=$(echo "${raw}" | grep ",${user},")
+            vip=${route%%,*}
+            printf "%-15s %-15s %-15s %s\n" \
+                   "${user}" \
+                   "${server}" \
+                   "${ip%:*}" \
+                   "${date% *}"
+            printf "%-15s %-15s %-15s %s\n" \
+                   " " \
+                   " " \
+                   "${vip%:*}" \
+                   "${inb} / ${outb}"
+        done <<< "${raw//,/ }"
+    done
+}
+
+
+# -----------------------------------------------------------------------
+# Parameter processing and sanity checks
+# -----------------------------------------------------------------------
 
 # Process command line parameters
-params="$*"
 while [ "$*" ]; do
     param=$1; shift; OPTARG=$1
     case $param in
     -v|--verbose) VERBOSE="-v" ;;
+    -h|--help)    vusage ;;
     -*)           die "Unknown paramter $param" ;;
-    *)            [ "${email}" ] && usage
-                  [ "${name}" ] && email=${param} && continue
-                  name=${param} && continue ;;
+    *)            non_opts="${non_opts} ${param}" ;;
     esac
 done
 
+# Process positional parameters
+[ "${non_opts}" ] || vusage "You must specify a command"
+set ${non_opts}
+command=$1; shift
+case ${command} in
+new|cert)
+    [ ${#} -gt 2 ] && usage "Too many parameters"
+    name=$1; email=$2 ;;
+pkg|package|revoke|show-cert*|show-access*|show-active)
+    [ ${#} -gt 1 ] && usage "Too many parameters"
+    name=$1  ;;
+*)
+    usage "Unknown command ${command}" ;;
+esac
+
+# Export parameter derived variables
+key_password=$(date +%Y)_${name}
+servers=$(host -t A ${serv_host} | awk '{print $4}')
+export KEY_CN="${name}"
+export KEY_EMAIL="${email}"
+
 
 # Sanity checks
-[ "${PKITOOL}" ] || die "Could not find pkitool"
-[ "${SSL_CONF}" ] || die "Could not find openssl.cnf"
-which ${MAKENSIS} &>/dev/null || die "Could not run ${MAKENSIS}"
+which ${makensis} &>/dev/null || die "${makensis} command not found"
+which ${zip} &>/dev/null || die "${zip} command not found"
+which ${ldapsearch} &>/dev/null || die "${ldapsearch} command not found"
 [ -d "${top}" ] || die "Could not find ${top}"
 [ -d "${pkgdir}" ] || die "Could not find ${pkgdir}"
-[ -d "${NSIS_DIR}" ] || die "Could not find openvpn NSIS directory"
-[ -e "${NSIS_FILE}" ] || die "Could not find openvpn-gui.nsi"
-[ "${name}" ] || usage "You must specify an account name"
-[ "${email}" ] || usage "You must specify an email address"
-[ "${email/@/}" ] || usage "Invalid email: ${email}"
+[ -d "${nsis_dir}" ] || die "Could not find openvpn NSIS directory"
+[ -e "${nsis_file}" ] || die "Could not find openvpn-gui.nsi"
+[ "${servers}" ] || die "Could not resolve ${serv_host}"
 
-
-# Export variables needed by the pkitool program. These would
-# traditionally be set by first sourcing the 'easy-rsa/vars' file.
-export KEY_DIR="${KEY_DIR:-${top}/keys/}"
-export KEY_CONFIG="${SSL_CONF}"
-export KEY_SIZE=1024
-export KEY_EXPIRE=730  # 2 years
-export KEY_CITY="DALLAS"
-export KEY_PROVINCE="TX"
-export KEY_COUNTRY="US"
-export KEY_ORG="SIL"
-export KEY_EMAIL="${email}"
+# Make sure the key directory is sane
+[ -d "${key_dir}" ] || die "Keys directory '${key_dir}' does not exist"
+[ -w "${key_dir}" ] || die "Keys directory '${key_dir}' is read-only"
+[ -w "${key_dir}/index.txt" ] \
+    || die "Index file ${key_dir}/index.txt is missing or read-only"
+[ -w "${key_dir}/serial" ] \
+    || die "Serial file ${key_dir}/serial is missing or read-only"
+[ -e "${key_config}" ] || die "Missing config file ${key_config}"
 
 # Output settings if verbose output requested
 vecho "top:          ${top}"
+vecho "command:      ${command}"
 vecho "name:         ${name}"
 vecho "email:        ${email}"
-vecho "PKITOOL:      ${PKITOOL}"
-vecho "NSIS_DIR:     ${NSIS_DIR}"
-vecho "NSIS_FILE:    ${NSIS_FILE}"
+vecho "key_dir:      ${key_dir}"
+vecho "key_config:   ${key_config}"
+vecho "key_password: ${key_password}"
+vecho "nsis_dir:     ${nsis_dir}"
+vecho "nsis_file:    ${nsis_file}"
 vecho "KEY_DIR:      ${KEY_DIR}"
-vecho "KEY_CONFIG:   ${KEY_CONFIG}"
 vecho "KEY_SIZE:     ${KEY_SIZE}"
 vecho "KEY_EXPIRE:   ${KEY_EXPIRE}"
 vecho "KEY_CITY:     ${KEY_CITY}"
@@ -106,62 +494,134 @@ vecho "KEY_PROVINCE: ${KEY_PROVINCE}"
 vecho "KEY_COUNTRY:  ${KEY_COUNTRY}"
 vecho "KEY_ORG:      ${KEY_ORG}"
 vecho "KEY_EMAIL:    ${KEY_EMAIL}"
+vecho
 
-# Make sure the key directory is sane
-[ -d "${KEY_DIR}" ] || die "Keys directory '${KEY_DIR}' does not exist"
-[ -e ${KEY_DIR}/index.txt ] || die "Missing index file ${KEY_DIR}/index.txt"
-[ -e ${KEY_DIR}/serial ] || die "Missing serial file ${KEY_DIR}/serial"
+# Command specific sanity checks
+case ${command} in
 
-# Check to make sure there isn't an active key for this user
-if cut -f1,3,6 --output-delimiter=":" ${KEY_DIR}/index.txt \
-        | grep -qs "^V::.*CN=${name}/"; then
-    echo >&2 "*** ${name} already exists in ${KEY_DIR}/index.txt ***"
-    echo >&2 "*** Perhaps you want to revoke before re-issuing ***"
-    yesno "Do you want to continue anyway (y/n)? " || die
-fi
+new|cert)    # New certificate checks
+    [ "${name}" ] || usage "You must specify an account name"
+    [ "${email}" ] || usage "You must specify an email address"
+    [ "${email/@/}" ] || usage "Invalid email: ${email}"
 
-# TODO: Check to make sure this account exists in Active Directory
+    # Check to make sure there isn't an active key for this user
+    if cut -f1,3,6 --output-delimiter=":" ${key_dir}/index.txt \
+            | grep -qs "^V::.*CN=${name}/"; then
+        echo >&2 "*** ${name} already exists in ${key_dir}/index.txt"
+        echo >&2 "*** Perhaps you want to revoke before re-issuing"
+        yesno "*** Do you want to continue anyway (y/n)? " || exit 0
+        echo >&2
+    fi
 
-echo >&2 "About to create new key/cert and installer for ${name}"
-yesno "Continue (y/n)? " || die
+    # Active Directory/LDAP account checks
+    ldif=$(${ldapcmd} "(&(objectcategory=person)(objectclass=user)(cn=${name}))")
 
-chmod -R go-rwx "${KEY_DIR}" || die "Failed to fix permissions on ${KEY_DIR}"
+    # Check number of records returned
+    lcount=$(echo -n "${ldif}" | grep "^dn: " | wc -l)
+    if [ "${lcount}" -eq 0 ]; then
+        die "No AD/LDAP record found for ${name}"
+    elif [ "${lcount}" -gt 1 ]; then
+        echo >&2 "More than one AD/LDAP record found for ${name}:"
+        die "$(echo "${ldif}" | grep '^cn: ')"
+    fi
 
-# Make a certificate/private key pair using a locally generated
-# root certificate and convert it to a PKCS #12 file including the
-# the CA certificate as well.
+    # Check VPN group membership
+    lgroups=$(echo "${ldif}" | grep -i "^memberOf: .*CN=VPN")
+    lgcount=$(echo -n "${ldif}" | grep -i "^memberOf: .*CN=VPN" | wc -l)
+    if [ "${lgcount}" -eq 0 ]; then
+        echo >&2 "*** ${name} is not a member of an AD/LDAP VPN group"
+        yesno "*** Continue anyway (y/n)? " || exit 0
+        echo >&2
+    elif [ "${lgcount}" -gt 1 ]; then
+        echo >&2 "*** ${name} is a member of multiple VPN groups:"
+        echo >&2 "${lgroups}"
+        yesno "*** Continue anyway (y/n)? " || exit 0
+        echo >&2
+    fi
 
-echo -e "\n>>> Generating pkgcs12 key"
-vecho "${PKITOOL} --pkcs12 ${name}"
-if [ "${VERBOSE}" ]; then
-    ${PKITOOL} --pkcs12 ${name} || die "PKITOOL failed"
-else
-    ${PKITOOL} --pkcs12 ${name} &>/dev/null || die "PKITOOL failed"
-fi
+    # Final confirmation
+    lname=$(echo "${ldif}" | grep "^displayName: " | awk -F: '{print $2}')
+    case $command in
+        new) echo >&2 "*** Create new certificate and installer for:" ;;
+        cert) echo >&2 "*** Create new certificate for:" ;;
+    esac
+    echo >&2 "***     $(echo "${name}, ${lname}, ${email}")"
+    yesno "*** Continue (y/n)? " || exit 0
+    echo >&2
+    ;;
 
-[ -s "${KEY_DIR}/${name}.p12" ] \
-    || die "Failed pkcs12: ${KEY_DIR}/${name}.p12 is zero size"
+pkg|package)   # New Windows package only checks
+    [ "${name}" ] || usage "You must specify an account name"
+    # Check to make sure there is an active key for this user
+    check_valid_cert ${name}
+    [ -e "${key_dir}/${name}.p12" ] \
+        || die "${name} does not have a valid certificate"
+
+    # Final confirmation
+    echo >&2 "*** Create an installer package for ${name}"
+    yesno "*** Continue (y/n)? " || exit 0
+    echo >&2
+    ;;
+
+revoke)   # Revoke a certificate
+    [ "${name}" ] || usage "You must specify an account name"
+    # Check to make sure there is an active key for this user
+    check_valid_cert ${name}
+
+    # Final confirmation
+    echo >&2 "*** Revoke certificate for ${name}"
+    echo >&2 "*** and copy CRL file to ${serv_host} (${servers})"
+    yesno "*** Continue (y/n)? " || exit 0
+    echo >&2
+    ;;
+show-cert|show-certs)    # Show certificates
+    ;;
+show-access|show-acrive) # Show server access information
+    ;;
+esac
 
 
-# Copy the pkcs12 cert/key just generated into the NSIS config
-cp ${KEY_DIR}/${name}.p12 ${NSIS_DIR}/openvpn/config/client.p12 \
-    || die "Could not copy pkgcs12 client cert to NSIS config"
+# -----------------------------------------------------------------------
+# Now the real work
+# -----------------------------------------------------------------------
 
+cd ${key_dir} || die
 
-# Now build the Windows package using that key
-echo -e "\n>>> Creating NSIS OpenVPN package"
-vecho "makensis ${NSIS_FILE} \"-XOutFile ${pkgdir}/openvpn-${name}-install.exe\""
-if [ "${VERBOSE}" ]; then
-    makensis ${NSIS_FILE} "-XOutFile ${pkgdir}/openvpn-${name}-install.exe" \
-        || die "Failed to create nsis package"
-else
-    makensis ${NSIS_FILE} "-XOutFile ${pkgdir}/openvpn-${name}-install.exe" \
-        >/dev/null || die "Failed to create nsis package"
-fi
+case ${command} in
+    new)
+        lock ${key_dir}/.lock
+        gen_cert
+        gen_pkg
+        unlock ${key_dir}/.lock
+        echo -e "\n>>> Successfully created new client"
+        ;;
+    cert)
+        lock ${key_dir}/.lock
+        gen_cert
+        unlock ${key_dir}/.lock
+        echo -e "\n>>> Successfully created new certificate"
+        ;;
+    pkg)
+        lock ${key_dir}/.lock
+        gen_pkg
+        unlock ${key_dir}/.lock
+        echo -e "\n>>> Successfully created new installer package"
+        ;;
+    revoke)
+        lock ${key_dir}/.lock
+        revoke_cert
+        copy_crl
+        unlock ${key_dir}/.lock
+        echo -e "\n>>> Successfully revoked certificate"
+        ;;
+    show-cert|show-certs)
+        show_cert
+        ;;
+    show-access*)
+        show_access_log
+        ;;
+    show-active)
+        show_active
+        ;;
+esac
 
-
-# Zip it so that email programs will allow it through
-echo -e "\n>>> Zipping NSIS OpenVPN package"
-cd ${pkgdir} || die "Failed to cd to ${pkgdir} for zip"
-rm -f openvpn-${name}-install.zip
-zip openvpn-${name}-install.{zip,exe} || die "failed to zip"
