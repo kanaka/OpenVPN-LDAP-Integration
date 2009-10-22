@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
-usage = """
+usage = """%s
+
 Usage: common_name=CN ./client-connect.py TMPFILE
 
 OpenVPN client-connect script to assign client IP based on
@@ -66,7 +67,7 @@ class SimpleConfigParser(ConfigParser.ConfigParser):
         try:
             text = open(filename).read()
         except IOError:
-            pass
+            raise
         else:
             file = StringIO.StringIO("[default]\n" + text)
             self.readfp(file, filename)
@@ -75,33 +76,40 @@ class SimpleConfigParser(ConfigParser.ConfigParser):
 class openvpn_allocator:
     def __init__(self):
 
-        # The work dir and configuration file are hard-coded for now.
-        # TODO: determine these from the actual parameters/config
-        # of the running process
-        os.chdir("/etc/openvpn")
-        config_file="server.conf"
-       
         # OpenVPN calls us with single parameter which is a temp file to
         # write our openvpn client settings into.
         try:
             self.client_file=sys.argv[1]
         except:
-            print "client config temp file not specified"
-            print usage
+            print usage % "client config temp file not specified"
             sys.exit(1)
-        
         try:
             self.common_name=os.environ['common_name']
         except:
-            print "common_name not set"
-            print usage
+            print usage % "common_name not set"
+            sys.exit(1)
+        try:
+            self.trusted_ip=os.environ['trusted_ip']
+        except:
+            print usage % "trusted_ip not set"
             sys.exit(1)
         try:
             global debug
             debug=int(os.environ['debug'])
         except:
             pass
+        try:
+            global workdir
+            workdir=os.environ['workdir']
+        except:
+            workdir="/etc/openvpn"
         
+        # The work dir and configuration file are hard-coded for now.
+        # TODO: determine these from the actual parameters/config
+        # of the running process
+        os.chdir(workdir)
+        config_file="server.conf"
+       
         # Read in our local config settings
         cfg = SimpleConfigParser()
         cfg.read(local_config)
@@ -254,7 +262,7 @@ class openvpn_allocator:
     def allocate_client(self):
         net = self.subnet
         # Extract the IP leases from the status file
-        lease={}
+        new_ip=""
         pool=[]
         if debug >= 2: print "Status file:"
         self.read_status()
@@ -263,18 +271,23 @@ class openvpn_allocator:
             if line.startswith(net):
                 if debug >= 2: print "  %s" % line
                 (ip, common_name, real_addr, date) = line.split(',')
-                lease['ip'] = {'common_name': common_name, 
-                                    'real_addr'  : real_addr,
-                                    'date'       : date}
-                pool.append(int(ip.split('.')[-1]))
+                octet = int(ip.split('.')[-1])
+                if common_name == self.common_name and \
+                        real_addr.startswith(self.trusted_ip + ":"):
+                    # Same user is reconnecting, reuse the IP
+                    if debug: print "reconnect for %s" % common_name
+                    new_ip = octet
+                    break
+                pool.append(octet)
 
-        if debug: print "\npool last octet list: %s" % str(pool)
+        if not new_ip:
+            if debug: print "\npool last octet list: %s" % str(pool)
 
-        # Find first available /30 network from the pool
-        for quad in range(2,64):
-            if pool.count(quad*4-2) == 0:
-                new_ip = quad*4-2
-                break
+            # Find first available /30 network from the pool
+            for quad in range(2,64):
+                if pool.count(quad*4-2) == 0:
+                    new_ip = quad*4-2
+                    break
 
         # Assign the address from this subnet pool
         f = open(self.client_file, 'a')
