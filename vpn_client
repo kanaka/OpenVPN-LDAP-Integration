@@ -220,6 +220,11 @@ unlock() {
     # Don't quote trap_list, they're multiple args
     trap - ${trap_list}
 
+    if [ -d "${tmp_dir}" ] && [ -n "${tmp_dir//\//}" ]; then
+        vecho "Removing temp dir (${tmp_dir})"
+        rm -r "${tmp_dir}"
+    fi
+
     owner=$(readlink ${path})
     vecho >&2 "Unlocking ${path}"
     if [ "${owner}" == "${mypid}" ]; then
@@ -280,6 +285,7 @@ derive_settings() {
     pkg_dir=${top_dir}/packages
 
     key_password=$(date +%Y)_${name}
+    http_password=$(perl -e "print crypt('$key_password','\$1\$2ujv89t5\$');")
     servers=$(host -t A ${serv_host} | awk '{print $4}')
     
     makensis=${makensis:-makensis}
@@ -323,27 +329,29 @@ derive_settings() {
 
 show_settings() {
     # Output settings if verbose output requested
-    vecho "top_dir:      ${top_dir}"
-    vecho "command:      ${command}"
-    vecho "name:         ${name}"
-    vecho "email:        ${email}"
-    vecho "key_dir:      ${key_dir}"
-    vecho "key_cfg:      ${key_cfg}"
-    vecho "key_password: ${key_password}"
-    vecho "nsis_dir:     ${nsis_dir}"
-    vecho "nsis_file:    ${nsis_file}"
-    vecho "kit_dir:      ${kit_dir}"
-    vecho "fw_bin:       ${fw_bin}"
-    vecho "KEY_DIR:      ${KEY_DIR}"
-    vecho "KEY_CN:       ${KEY_CN}"
-    vecho "KEY_SIZE:     ${KEY_SIZE}"
-    vecho "CA_EXPIRE:    ${CA_EXPIRE}"
-    vecho "KEY_EXPIRE:   ${KEY_EXPIRE}"
-    vecho "KEY_CITY:     ${KEY_CITY}"
-    vecho "KEY_PROVINCE: ${KEY_PROVINCE}"
-    vecho "KEY_COUNTRY:  ${KEY_COUNTRY}"
-    vecho "KEY_ORG:      ${KEY_ORG}"
-    vecho "KEY_EMAIL:    ${KEY_EMAIL}"
+    vecho "top_dir:       ${top_dir}"
+    vecho "command:       ${command}"
+    vecho "name:          ${name}"
+    vecho "email:         ${email}"
+    vecho "key_dir:       ${key_dir}"
+    vecho "key_cfg:       ${key_cfg}"
+    vecho "key_password:  ${key_password}"
+    vecho "http_password: ${http_password}"
+    vecho "servers:       ${servers}"
+    vecho "nsis_dir:      ${nsis_dir}"
+    vecho "nsis_file:     ${nsis_file}"
+    vecho "kit_dir:       ${kit_dir}"
+    vecho "fw_bin:        ${fw_bin}"
+    vecho "KEY_DIR:       ${KEY_DIR}"
+    vecho "KEY_CN:        ${KEY_CN}"
+    vecho "KEY_SIZE:      ${KEY_SIZE}"
+    vecho "CA_EXPIRE:     ${CA_EXPIRE}"
+    vecho "KEY_EXPIRE:    ${KEY_EXPIRE}"
+    vecho "KEY_CITY:      ${KEY_CITY}"
+    vecho "KEY_PROVINCE:  ${KEY_PROVINCE}"
+    vecho "KEY_COUNTRY:   ${KEY_COUNTRY}"
+    vecho "KEY_ORG:       ${KEY_ORG}"
+    vecho "KEY_EMAIL:     ${KEY_EMAIL}"
     vecho
 }
 
@@ -447,7 +455,7 @@ sanity_checks() {
         ;;
     esac
 
-    # Commands that require NSIS Windows
+    # State that is required for NSIS package and firmware generation
     case ${command} in
     new|pkg|package)
         which ${makensis} &>/dev/null || die "${makensis} command not found"
@@ -456,6 +464,13 @@ sanity_checks() {
         [ -e "${nsis_file}" ] || die "Could not find openvpn-gui.nsi"
         [ -e "${cfg_dir}/client.ovpn" ] \
             || die "Could not find ${cfg_dir}/client.ovpn"
+        ;;
+    firmware)
+        [ "${http_password}" ] || die "Failed to crypt password"
+        which gcc &>/dev/null || die "gcc command not found"
+        which g++ &>/dev/null || die "g++ command not found"
+        which make &>/dev/null || die "make command not found"
+        [ -e /usr/include/zlib.h ] || die "Could not find zlib.h"
         ;;
     esac
 
@@ -471,6 +486,9 @@ sanity_checks() {
         yesno "*** Continue (y/n)? " || exit 0 ;;
     pkg|package)
         echo >&2 "*** Create an installer package for ${name}"
+        yesno "*** Continue (y/n)? " || exit 0 ;;
+    firmware)
+        echo >&2 "*** Create DD-WRT firmware for ${name}"
         yesno "*** Continue (y/n)? " || exit 0 ;;
     revoke)
         echo >&2 "*** Revoke certificate for ${name}"
@@ -627,7 +645,60 @@ gen_pkg() {
 # Create a new DD-WRT router firmware image with client
 # cert/keys pre-installed and configured
 gen_firmware() {
-   echo -e "\n>>> Generating firmware"
+    tmp_dir=$(mktemp -d)  # Global for cleanup
+
+    [ "${tmp_dir}" ] || die "Could not create temp directory"
+    [ "${tmp_dir//\//}" ] || die "Temp dir (${tmp_dir}) is bogus"
+
+    echo -e "\n>>> Unpacking original firmware"
+    cd ${kit_dir} || die
+    if [ "${VERBOSE}" ]; then
+        ./extract_firmware.sh ${fw_bin} ${tmp_dir}/firmware \
+            || die "Could not extract firmware ${fw_bin}"
+    else
+        ./extract_firmware.sh ${fw_bin} ${tmp_dir}/firmware \
+            > /dev/null || die "Could not extract firmware ${fw_bin}"
+    fi
+
+    local fw_dir=${tmp_dir}/firmware/rootfs
+    local fwo_dir=${fw_dir}/etc/openvpn
+
+    echo -e "\n>>> Copying config files and keys to firmware"
+    cp ${cfg_dir}/S02openvpn ${fw_dir}/etc/init.d \
+       || die "Could not copy startup script"
+    chmod +x ${fw_dir}/etc/init.d/S02openvpn \
+       || die "Could not make startup script executable"
+
+    mkdir -p ${fwo_dir} || die
+    cp ${cfg_dir}/nvram/* ${fwo_dir} \
+       || die "Could not copy nvram configs"
+    cp ${key_dir}/ca.crt ${fwo_dir}/openvpn_ca \
+       || die "Could not copy ca.crt"
+    cp ${key_dir}/${name}.crt ${fwo_dir}/openvpn_client \
+       || die "Could not copy ${name}.crt"
+    cp ${key_dir}/${name}.key ${fwo_dir}/openvpn_key \
+       || die "Could not copy ${name}.key"
+    cp ${key_dir}/ta.key ${fwo_dir}/openvpn_tlsauth \
+       || die "Could not copy ta.key"
+    cp ${cfg_dir}/router.conf ${fwo_dir}/openvpn_config \
+       || die "Could not copy router.conf"
+
+    echo -e "\n>>> Setting new router password"
+    echo -n "${http_password}" > ${fwo_dir}/http_passwd \
+       || die "Could not set router password"
+
+    echo -e "\n>>> Generating firmware image (takes a couple minutes)"
+    if [ "${VERBOSE}" ]; then
+        ./build_firmware.sh ${tmp_dir} ${tmp_dir}/firmware \
+            || die "Could not create new firmware image"
+    else
+        ./build_firmware.sh ${tmp_dir} ${tmp_dir}/firmware \
+            >/dev/null 2>&1 || die "Could not create new firmware image"
+    fi
+
+    cp ${tmp_dir}/custom_image-wrt54g.bin \
+        ${pkg_dir}/openvpn-${name}-firmware.bin \
+        || die "Could not copy new firmware image"
 }
 
 
