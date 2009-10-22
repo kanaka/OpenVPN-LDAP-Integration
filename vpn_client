@@ -33,22 +33,20 @@ usage_long="""${usage}
 OpenVPN client certificate management program.
 
 ${NAME} can be used to generate or revoke a client certificate,
-revoke), create a Windows OpenVPN installer for a client, or show
+revoke), create a install packages for a client, or show
 information about client certificates.
 
 ${NAME} new
     Generate a new client certificate for <common_name>
-    and create a Windows installer package containing that
-    certificate. The <email> address will be encoded in the
-    certificate.
+    and create install packages containing that certificate. The
+    <email> address will be encoded in the certificate.
 
 ${NAME} cert
     Only create a new client certificate for <common_name>. The
     <email> address will be encoded in the certificate.
 
 ${NAME} pkg
-    Only create the Windows installer package using a existing
-    certificate.
+    Only create the install packages using a existing certificate.
 
 ${NAME} firmware
     Create a new DD-WRT firmware image with the OpenVPN cert/keys
@@ -491,7 +489,7 @@ sanity_checks() {
     # Final confirmation
     case ${command} in
     new)
-        echo >&2 "*** Create new certificate and installer for:"
+        echo >&2 "*** Create new certificate and install packages for:"
         echo >&2 "***     Username  : ${name}"
         echo >&2 "***     Name      : ${lname}"
         echo >&2 "***     Email     : ${email}"
@@ -505,7 +503,7 @@ sanity_checks() {
         echo >&2 "***     VPN group : ${lgroup}"
         yesno "*** Continue (y/n)? " || exit 0 ;;
     pkg|package)
-        echo >&2 "*** Create an installer package for ${name}:"
+        echo >&2 "*** Create an install packages for ${name}:"
         yesno "*** Continue (y/n)? " || exit 0 ;;
     firmware)
         echo >&2 "*** Create DD-WRT firmware for ${name}"
@@ -622,7 +620,7 @@ gen_ca() {
 
 }
 
-# Generate the Windows installer package
+# Generate the install packages
 gen_pkg() {
     local pkg=openvpn-${name}-install
     # Now build the Windows package using that key
@@ -653,6 +651,7 @@ gen_pkg() {
     rm -f ${pkg}.zip
     zip ${pkg}.{zip,exe} || die "failed to zip"
 
+
     # Create a tarball of the config for Linux users
     echo -e "\n>>> Creating config tarball for Linux users"
     make_tmp_dir
@@ -666,12 +665,30 @@ gen_pkg() {
        || die "Could not copy ${name}.key"
     cp ${key_dir}/ta.key ${tmp_dir}/openvpn/ta.key \
        || die "Could not copy ta.key"
-# TODO: create *.ovpn file for Linux users and package it
-#    # Create a tarball of the config for Linux users
-#    echo -e "\n>>> Creating config tarball for Linux users"
-#    cd ${nsis_dir} || die "Failed to cd to ${nsis_dir}/openvpn"
-#    tar czf ${pkg_dir}/openvpn-${name}-config.tgz openvpn/config \
-#        || die "failed to create config tarbal/"
+    cp ${cfg_dir}/linux.conf ${tmp_dir}/openvpn/client.conf \
+       || die "Could not copy router.conf"
+ 
+    tar czf ${pkg_dir}/openvpn-${name}-linux.tgz \
+        -C ${tmp_dir} openvpn \
+        || die "failed to create Linux config tarball"
+
+    # Create a zip of the configs for updating windows users
+    echo -e "\n>>> Creating config zip file for Windows update"
+    mkdir -p ${tmp_dir}/config || die
+   
+    cp ${key_dir}/${name}.p12 ${tmp_dir}/config/client.p12 \
+       || die "Could not copy ${name}.p12"
+    cp ${cfg_dir}/client.ovpn ${tmp_dir}/config/client.ovpn \
+       || die "Could not copy client.ovpn"
+    cp ${key_dir}/ta.key ${tmp_dir}/config/ta.key \
+       || die "Could not copy ta.key"
+ 
+    # Zip it so that email programs will allow it through
+    cd ${tmp_dir} || die "Failed to cd to ${tmp_dir} for zip"
+    rm -f ${pkg_dir}/openvpn-${name}-config.zip
+    zip ${pkg_dir}/openvpn-${name}-config.zip config/* \
+        || die "failed to zip"
+
 }
 
 
