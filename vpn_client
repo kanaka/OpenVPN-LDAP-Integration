@@ -139,6 +139,7 @@ Configuration:
 Requirements/prerequisites:
 
   - installed packages:
+    - openvpn:    to generate tlsauth key
     - openssl:    key management
     - ldap-utils: ldapsearch command to verify users
     - nsis:       makensis to create Windows NSIS package
