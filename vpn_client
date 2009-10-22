@@ -24,6 +24,8 @@ Usage: ${NAME} [-v] new <common_name> <email>
 
    -v            verbose output
    -h | --help   show detailed help
+   -p | --password PASSWORD
+                 use alternate cert/key password
    <common_name> create certificate and NSIS package for
                  Active Directory account <common_name>
    <email>       email address for <common_name>
@@ -157,7 +159,7 @@ main() {
 # Utility routines
 # -----------------------------------------------------------------------
 die() { echo >&2 -e "$*"; exit 1; }
-vecho() { [ "${VERBOSE}" ] && echo "$*"; }
+vecho() { [ "${VERBOSE}" ] && echo -e "$*"; }
 usage() {
     [ "$*" ] && echo >&2 -e "$*"
     echo >&2 "${usage}"
@@ -172,7 +174,8 @@ vusage() {
 # returns 0 for 'yes' or 1 for 'no'
 yesno() {
     local answer=
-    [ "${NOASK}" ] && echo "$* y" && return 0
+    [ "${ERROR_ASK}" ] && echo "$* n" && return 1
+    [ "${NO_ASK}" ] && echo "$* y" && return 0
     while read -p "$*" answer; do
         case ${answer} in
             y|yes|Y|Yes|YES) return 0 ;;
@@ -261,10 +264,14 @@ process_parameters() {
     while [ "$*" ]; do
         param=$1; shift; OPTARG=$1
         case $param in
-        -v|--verbose) VERBOSE="-v" ;;
-        -h|--help)    vusage ;;
-        -*)           die "Unknown paramter $param" ;;
-        *)            non_opts="${non_opts} ${param}" ;;
+        -v|--verbose)   VERBOSE="-v"                    ;;
+        -h|--help)      vusage                          ;;
+        -p|--password)  key_password="${OPTARG}"; shift ;;
+        --check)        check_only=1; ERROR_ASK=1       ;;
+        --noask)        NO_ASK=1;                       ;;
+        --noninter*)    NO_ASK=1;                       ;;
+        -*)             die "Unknown paramter $param"   ;;
+        *)              non_opts="${non_opts} ${param}" ;;
         esac
     done
     
@@ -295,7 +302,7 @@ derive_settings() {
     key_cfg=${cfg_dir}/openssl.cnf
     pkg_dir=${top_dir}/packages
 
-    key_password=$(date +%Y)_${name}
+    key_password=${key_password:-$(date +%Y)_${name}}
     http_password=$(perl -e "print crypt('$key_password','\$1\$2ujv89t5\$');")
     servers=$(host -t A ${serv_host} | awk '{print $4}')
     
@@ -435,6 +442,7 @@ sanity_checks() {
     
         # Active Directory/LDAP account checks
         ldif=$(${ldapcmd} "(&(objectcategory=person)(objectclass=user)(cn=${name}))")
+        lname=$(echo "${ldif}" | grep "^displayName: " | sed 's/^.*: //')
     
         # Check number of records returned
         lcount=$(echo -n "${ldif}" | grep "^dn: " | wc -l)
@@ -447,19 +455,27 @@ sanity_checks() {
     
         # Check VPN group membership
         lgroups=$(echo "${ldif}" | grep -i "^memberOf: .*CN=VPN")
-        lgcount=$(echo -n "${ldif}" | grep -i "^memberOf: .*CN=VPN" | wc -l)
+        lgcount=$(echo "${ldif}" | grep -i "^memberOf: .*CN=VPN" | wc -l)
+        lgroups=$(echo "${lgroups}" | awk -F'[=,]' '{print $2}')
+
+        # TODO: validate info field
+#        echo "${lgroups}" | while read group; do
+#            echo "${ldapcmd} 'CN=${group}'"
+#            ldif=$(${ldapcmd} "CN=${group}")
+#            echo -e "ldif:\n${ldif}"
+#        done
+        lvgroups="${lgroups}"
+
         if [ "${lgcount}" -eq 0 ]; then
             echo >&2 "*** ${name} is not a member of an AD/LDAP VPN group"
-            yesno "*** Continue anyway (y/n)? " || exit 0
+            yesno "*** Continue anyway (y/n)? " || exit 1
             echo >&2
         elif [ "${lgcount}" -gt 1 ]; then
             echo >&2 "*** ${name} is a member of multiple VPN groups:"
-            echo >&2 "${lgroups}"
-            yesno "*** Continue anyway (y/n)? " || exit 0
+            echo >&2 "${lvgroups}"
+            yesno "*** Continue anyway (y/n)? " || exit 1
             echo >&2
         fi
-        lname=$(echo "${ldif}" | grep "^displayName: " | sed 's/^.*: //')
-        lgroup=$(echo "${lgroups}" | awk -F'[=,]' '{print $2}')
         ;;
     pkg|package)   # New Windows package only checks
         [ -e "${key_dir}/${name}.p12" ] \
@@ -486,6 +502,8 @@ sanity_checks() {
         ;;
     esac
 
+    [ "${check_only}" ] && exit 0
+
     # Final confirmation
     case ${command} in
     new)
@@ -493,30 +511,31 @@ sanity_checks() {
         echo >&2 "***     Username  : ${name}"
         echo >&2 "***     Name      : ${lname}"
         echo >&2 "***     Email     : ${email}"
-        echo >&2 "***     VPN group : ${lgroup}"
-        yesno "*** Continue (y/n)? " || exit 0 ;;
+        echo >&2 "***     VPN group : ${lvgroups}"
+        yesno "*** Continue (y/n)? " || exit 1 ;;
     cert)
         echo >&2 "*** Create new certificate for ${lname}:"
         echo >&2 "***     Username  : ${name}"
         echo >&2 "***     Name      : ${lname}"
         echo >&2 "***     Email     : ${email}"
-        echo >&2 "***     VPN group : ${lgroup}"
-        yesno "*** Continue (y/n)? " || exit 0 ;;
+        echo >&2 "***     VPN group : ${lvgroups}"
+        yesno "*** Continue (y/n)? " || exit 1 ;;
     pkg|package)
         echo >&2 "*** Create an install packages for ${name}:"
-        yesno "*** Continue (y/n)? " || exit 0 ;;
+        yesno "*** Continue (y/n)? " || exit 1 ;;
     firmware)
         echo >&2 "*** Create DD-WRT firmware for ${name}"
-        yesno "*** Continue (y/n)? " || exit 0 ;;
+        yesno "*** Continue (y/n)? " || exit 1 ;;
     revoke)
         echo >&2 "*** Revoke certificate for ${name}"
         echo >&2 "*** and copy CRL file to ${serv_host} (${servers})"
-        yesno "*** Continue (y/n)? " || exit 0 ;;
+        yesno "*** Continue (y/n)? " || exit 1 ;;
     new-ca)
         echo >&2 "*** Create a new CA and server cert/key"
-        yesno "*** Continue (y/n)? " || exit 0 ;;
+        yesno "*** Continue (y/n)? " || exit 1 ;;
     esac
     echo >&2
+
 }
 
 # Verify that the keys and packages directories are sane
