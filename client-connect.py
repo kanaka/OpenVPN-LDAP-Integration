@@ -19,8 +19,10 @@ Description:
   This script requires a configuration file that specifies the LDAP/AD
   connection settings. Here is an example:
       ldap_server = ldap://172.20.0.10
-      ldap_user = vpnquery_account
+      ldap_dn = cn=vpnquery_account,cn=users,dc=example,dc=com
       ldap_password = secret
+      # ldap_base_dn can have multiples separated by spaces
+      ldap_base_dn = cn=users,dc=example,dc=com ou=marketing,dc=example,dc=com
 
   The subnet value is determined as follows:
     - Look up the LDAP group memberships for <common_name>
@@ -103,13 +105,15 @@ class openvpn_allocator:
         cfg = SimpleConfigParser()
         cfg.read(local_config)
         self.ldap_server = cfg.get("default", "ldap_server")
-        self.ldap_user = cfg.get("default", "ldap_user")
+        self.ldap_dn = cfg.get("default", "ldap_dn")
         self.ldap_password = cfg.get("default", "ldap_password")
+        self.ldap_base_dn = cfg.get("default", "ldap_base_dn")
         if debug == 2:
             print "configuration (%s):" % local_config
             print "  ldap_server: %s" % self.ldap_server
-            print "  ldap_user: %s" % self.ldap_user
+            print "  ldap_dn: %s" % self.ldap_dn
             print "  ldap_password: %s" % self.ldap_password
+            print "  ldap_base_dn: %s" % self.ldap_base_dn
         
         # Read in the global openvpn configuration
         try:
@@ -147,17 +151,19 @@ class openvpn_allocator:
                 print "    %s: %s" % (key, data[key])
 
     def lookup_ldap_subnet(self):
-        pw = self.ldap_password
 
-        dn = "cn=%s,cn=Users,dc=dallas,dc=sil,dc=org" % self.ldap_user
-        base_dn = "cn=Users,dc=dallas,dc=sil,dc=org"
         filter = "(cn=%s)" % (self.common_name)
+        res = []
 
         try:
             # TODO: secure connection to the ldap server
             con = ldap.initialize(self.ldap_server)
-            con.simple_bind_s(dn, pw)
-            res = con.search_s(base_dn, ldap.SCOPE_SUBTREE, filter)
+            con.simple_bind_s(self.ldap_dn, self.ldap_password)
+            for base_dn in self.ldap_base_dn.split():
+                ret = con.search_s(base_dn, ldap.SCOPE_SUBTREE, filter)
+                res.extend(ret)
+                if debug == 2:
+                    print "found %d records in %s" % (len(ret), base_dn)
         except ldap.LDAPError, e:
             print "Error:", e
             return 0
@@ -226,7 +232,6 @@ class openvpn_allocator:
 
         if debug: print "full access_list:", access_list
 
-        # TODO: fix
         self.subnet = "%s.%d" % (self.full_subnet, access_list[0])
         if debug: print "setting subnet to %s" % self.subnet
         return 1
