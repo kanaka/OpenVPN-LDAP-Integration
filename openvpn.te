@@ -1,0 +1,43 @@
+# SELinux configuration to allow OpenVPN to run on CentOS with SELinux
+# in enforcing mode.
+# To use this configuration, do something like this:
+#   checkmodule -M -m -o openvpn.mod openvpn.te
+#   semodule_package -o openvpn.pp -m openvpn.mod
+#   sudo /usr/sbin/semodule -i openvpn.pp
+#   sudo /usr/sbin/semanage port -a -t openvpn_port_t -p tcp 7505
+
+module openvpn 1.0;
+require {
+        type openvpn_t;
+        type openvpn_port_t;
+        type ldap_port_t;
+        type openvpn_var_run_t;
+        type openvpn_etc_t;
+        type tmp_t;
+        class tcp_socket { name_connect name_bind };
+        class dir { write search add_name remove_name };
+        class capability { dac_override sys_chroot };
+        class file { create append write unlink execute execute_no_trans };
+}
+
+#============= openvpn_t ==============
+
+# Allow port connections and binding for clients (1194) and mgt port (7505)
+allow openvpn_t openvpn_port_t:tcp_socket { name_connect name_bind };
+allow openvpn_t ldap_port_t:tcp_socket name_connect;
+
+# Allow writing to /var/run/openvpn (status, IP assignments and pid file)
+allow openvpn_t openvpn_var_run_t:dir { write search add_name };
+allow openvpn_t self:capability dac_override;
+
+# Allow openvpn to chroot for security
+allow openvpn_t self:capability sys_chroot;
+
+# Allow client-connect script to be executed
+allow openvpn_t openvpn_etc_t:file { create append write unlink execute execute_no_trans };
+allow openvpn_t openvpn_etc_t:dir { write add_name remove_name };
+
+
+# Allow client-connect script to write to /tmp
+allow openvpn_t tmp_t:dir { search write add_name };
+allow openvpn_t tmp_t:file { create append };
