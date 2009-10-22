@@ -98,7 +98,7 @@ serv_crl_path="/etc/openvpn/crl.pem"
 # Paths and commands
 top=$(readlink -f $(dirname ${0}))
 key_dir=${top}/keys
-cfg_dir=${top}/config/
+cfg_dir=${top}/vpn_config/
 key_config=${cfg_dir}/openssl.cnf
 pkg_dir=${top}/packages
 makensis=${makensis:-makensis}
@@ -591,7 +591,7 @@ new|cert)    # New certificate checks
     [ "${name}" ] || usage "You must specify an account name"
     [ "${email}" ] || usage "You must specify an email address"
     [ "${email/@/}" ] || usage "Invalid email: ${email}"
-    check_keys_dir
+    check_dirs
 
     # Check to make sure there isn't an active key for this user
     if cut -f1,3,6 --output-delimiter=":" ${key_dir}/index.txt \
@@ -653,7 +653,7 @@ new-ca)       # New certificate authority checks
     ;;
 pkg|package)   # New Windows package only checks
     [ "${name}" ] || usage "You must specify an account name"
-    check_keys_dir
+    check_dirs
     # Check to make sure there is an active key for this user
     check_valid_cert ${name}
     [ -e "${key_dir}/${name}.p12" ] \
@@ -667,7 +667,7 @@ pkg|package)   # New Windows package only checks
 
 revoke)   # Revoke a certificate
     [ "${name}" ] || usage "You must specify an account name"
-    check_keys_dir
+    check_dirs
     # Check to make sure there is an active key for this user
     check_valid_cert ${name}
 
@@ -678,7 +678,7 @@ revoke)   # Revoke a certificate
     echo >&2
     ;;
 show-cert|show-certs)    # Show certificates
-    check_keys_dir
+    check_dirs
     ;;
 show-access|show-acrive) # Show server access information
     ;;
