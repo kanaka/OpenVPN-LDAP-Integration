@@ -19,10 +19,11 @@ Description:
   This script requires a configuration file that specifies the LDAP/AD
   connection settings. Here is an example:
       ldap_server = ldap://172.20.0.10
+      # Query account and password
       ldap_dn = cn=vpnquery_account,cn=users,dc=example,dc=com
       ldap_password = secret
-      # ldap_base_dn can have multiples separated by spaces
-      ldap_base_dn = cn=users,dc=example,dc=com ou=marketing,dc=example,dc=com
+      # Search for "VPN*" groups in ldap_group_dn
+      ldap_group_dn = cn=users,dc=example,dc=com
 
   The subnet value is determined as follows:
     - Look up the LDAP group memberships for <common_name>
@@ -107,13 +108,13 @@ class openvpn_allocator:
         self.ldap_server = cfg.get("default", "ldap_server")
         self.ldap_dn = cfg.get("default", "ldap_dn")
         self.ldap_password = cfg.get("default", "ldap_password")
-        self.ldap_base_dn = cfg.get("default", "ldap_base_dn")
-        if debug == 2:
+        self.ldap_group_dn = cfg.get("default", "ldap_group_dn")
+        if debug >= 2:
             print "configuration (%s):" % local_config
             print "  ldap_server: %s" % self.ldap_server
             print "  ldap_dn: %s" % self.ldap_dn
             print "  ldap_password: %s" % self.ldap_password
-            print "  ldap_base_dn: %s" % self.ldap_base_dn
+            print "  ldap_group_dn: %s" % self.ldap_group_dn
         
         # Read in the global openvpn configuration
         try:
@@ -152,75 +153,89 @@ class openvpn_allocator:
 
     def lookup_ldap_subnet(self):
 
-        filter = "(cn=%s)" % (self.common_name)
-        res = []
-
+        # Get the VPN groups
+        base_dn = self.ldap_group_dn
+        filter = "(cn=VPN*)"
         try:
             # TODO: secure connection to the ldap server
             con = ldap.initialize(self.ldap_server)
             con.simple_bind_s(self.ldap_dn, self.ldap_password)
-            for base_dn in self.ldap_base_dn.split():
-                ret = con.search_s(base_dn, ldap.SCOPE_SUBTREE, filter)
-                res.extend(ret)
-                if debug == 2:
-                    print "found %d records in %s" % (len(ret), base_dn)
+            res = con.search_s(base_dn, ldap.SCOPE_SUBTREE, filter)
         except ldap.LDAPError, e:
             print "Error:", e
             return 0
 
-        if len(res) == 0:
-            print "No matches found for %s" % filter
+        if debug >= 3: self.print_ldap_lookup(res)
+
+        # Filter VPN groups that user is member of and
+        # that have access control in the info field
+        groups = []
+        access_list = []
+        user_dn = ""
+        cname = self.common_name.lower()
+        for group in [x[1] for x in res]:
+            if not group.has_key('member'): continue
+            if not group.has_key('info'): continue
+            gname = group['cn'][0]
+            if debug >= 3:
+                print "searching for '%s' in '%s'" % (cname, gname)
+            for user in [x.lower() for x in group['member']]:
+                if user.find("=%s," % cname) < 0: continue
+
+                if debug >= 2:
+                    print "found '%s' in '%s'" % (cname, gname)
+
+                info = group['info'][0]
+                if debug >= 2:
+                    print "info field:\n  %s" % info.replace("\n", "\n  ")
+
+                # Be flexible about access number in the info field
+                re_matches = re_access.findall(info)
+                if len(re_matches) == 0: continue
+
+                if debug >= 2:
+                    print "adding access data: %s\n" % str(re_matches)
+                access_list.extend(re_matches)
+
+                user_dn = user
+                groups.append(group)
+                break
+
+        if len(groups) == 0:
+            print "No VPN group membership found for '%s'" % cname
             return 0
 
-        if debug == 3: self.print_ldap_lookup(res)
+        # Read the user's data
+        base_dn = user_dn
+        filter = "(cn=%s)" % cname
+        try:
+            # TODO: secure connection to the ldap server
+            res = con.search_s(base_dn, ldap.SCOPE_SUBTREE, filter)
+        except ldap.LDAPError, e:
+            print "Error:", e
+            return 0
 
-        if len(res) != 1:
-            print "Multiple matches found for %s" % filter
+        con.unbind()
+
+        if debug >= 3: self.print_ldap_lookup(res)
+        
+        # These conditions really should not happen if we just found
+        # the user in a group above.
+        if len(res) == 0:
+            print "Found '%s' in a group, but LDAP lookup failed" % cname
+            return 0
+        if len(res) > 1:
+            print "Multiple LDAP results for '%s'" % cname
             return 0
 
         user = res[0][1] # 0->first/only result, 1->data
 
         # Validate that account is still active (userAccountControl)
         userAccountControl = int(user['userAccountControl'][0])
-        if debug: print "userAccountControl: %d" % userAccountControl 
+        if debug >= 2: print "userAccountControl: %d" % userAccountControl 
         if userAccountControl & 2:    # Bit 2 means disabled
             print "Account %s is disabled" % self.common_name
             return 0
-
-        # Extract VPN group membership
-        memberOf = [x for x in user['memberOf'] if x.startswith('CN=VPN')]
-        if debug == 2: print "VPN list:", memberOf
-        vpn_cnt = len(memberOf)
-
-        if vpn_cnt == 0:
-            print "No VPN group membership"
-            return 0
-        
-        # for each VPN membership, get the access policy from the
-        # group info (Notes) field
-        access_list = []
-        for base_dn in memberOf:
-            if debug: print "processing group %s" % base_dn
-            try:
-                res = con.search_s(base_dn, ldap.SCOPE_SUBTREE)
-            except ldap.LDAPError, e:
-                print "Error:", e
-                return 0
-            if debug == 3: self.print_ldap_lookup(res)
-
-            if not res[0][1].has_key('info'):
-                if debug: print "No info field in %s" % base_dn
-                continue
-
-            info = res[0][1]['info'][0]
-            if debug == 2: print "info field:\n%s\n" % info
-
-            # Be flexible about access number in the info field
-            re_matches = re_access.findall(info)
-            if debug == 2: print "adding access data: %s" % str(re_matches)
-            access_list += re_matches
-
-        con.unbind()
 
         if len(access_list) == 0:
             print "No access controls found in VPN group(s)"
@@ -230,7 +245,7 @@ class openvpn_allocator:
         access_list = [int(x) for x in access_list]
         access_list.sort()
 
-        if debug: print "full access_list:", access_list
+        if debug: print "Full access_list:", access_list
 
         self.subnet = "%s.%d" % (self.full_subnet, access_list[0])
         if debug: print "setting subnet to %s" % self.subnet
@@ -241,12 +256,12 @@ class openvpn_allocator:
         # Extract the IP leases from the status file
         lease={}
         pool=[]
-        if debug == 2: print "Status file:"
+        if debug >= 2: print "Status file:"
         self.read_status()
         for line in self.status:
             line = line.strip()
             if line.startswith(net):
-                if debug == 2: print "  %s" % line
+                if debug >= 2: print "  %s" % line
                 (ip, common_name, real_addr, date) = line.split(',')
                 lease['ip'] = {'common_name': common_name, 
                                     'real_addr'  : real_addr,
