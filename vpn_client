@@ -115,13 +115,13 @@ main() {
         lock ${key_dir}
         gen_cert
         unlock ${key_dir}
-        echo -e "\n>>> Successfully created new certificate"
+        echo -e "\n>>> Successfully created new certificate/key"
         ;;
-    pkg)
+    pkg|package)
         lock ${key_dir}
         gen_pkg
         unlock ${key_dir}
-        echo -e "\n>>> Successfully created new installer package"
+        echo -e "\n>>> Successfully created new packages"
         ;;
     firmware)
         lock ${key_dir}
@@ -134,9 +134,9 @@ main() {
         revoke_cert
         copy_crl
         unlock ${key_dir}
-        echo -e "\n>>> Successfully revoked certificate"
+        echo -e "\n>>> Successfully revoked certificate/key"
         ;;
-    show-cert|show-certs)
+    show-cert*)
         show_cert
         ;;
     show-access*)
@@ -183,6 +183,19 @@ yesno() {
         esac
     done
 }
+
+# Creates a temporary directory and set the global 'tmp_dir' to it.
+# Unlock will clean up this directory automatically.
+make_tmp_dir() {
+    # If we have already been called, do nothing
+    [ "${tmp_dir}" ] && [ -d "${tmp_dir}" ] && return
+
+    tmp_dir=$(mktemp -d)  # Global for cleanup
+
+    [ "${tmp_dir}" ] || die "Could not create temp directory"
+    [ "${tmp_dir//\//}" ] || die "Temp dir (${tmp_dir}) is bogus"
+}
+
 
 # Lock routines to make sure there is only one caller at a time.
 # This locking strategy uses a symlink (because creation is atomic)
@@ -373,7 +386,7 @@ sanity_checks() {
     new|cert|pkg|package|firmware|revoke)
         [ "${name}" ] || usage "You must specify an account name"
         check_dirs ;;
-    show-cert|show-certs)
+    show-cert*)
         check_dirs ;;
     new-ca)       # New certificate authority checks
         [ -e "${key_dir}" ] \
@@ -400,7 +413,7 @@ sanity_checks() {
 
     # communication with the servers is required
     case ${command} in
-    show-access|show-acrive|revoke)
+    show-access|show-active|revoke)
         [ "${servers}" ] || die "Could not resolve ${serv_host}"
         ;;
     esac
@@ -447,7 +460,8 @@ sanity_checks() {
             yesno "*** Continue anyway (y/n)? " || exit 0
             echo >&2
         fi
-        lname=$(echo "${ldif}" | grep "^displayName: " | awk -F: '{print $2}')
+        lname=$(echo "${ldif}" | grep "^displayName: " | sed 's/^.*: //')
+        lgroup=$(echo "${lgroups}" | awk -F'[=,]' '{print $2}')
         ;;
     pkg|package)   # New Windows package only checks
         [ -e "${key_dir}/${name}.p12" ] \
@@ -478,14 +492,20 @@ sanity_checks() {
     case ${command} in
     new)
         echo >&2 "*** Create new certificate and installer for:"
-        echo >&2 "***     $(echo "${name}, ${lname}, ${email}")"
+        echo >&2 "***     Username  : ${name}"
+        echo >&2 "***     Name      : ${lname}"
+        echo >&2 "***     Email     : ${email}"
+        echo >&2 "***     VPN group : ${lgroup}"
         yesno "*** Continue (y/n)? " || exit 0 ;;
     cert)
-        echo >&2 "*** Create new certificate for:"
-        echo >&2 "***     $(echo "${name}, ${lname}, ${email}")"
+        echo >&2 "*** Create new certificate for ${lname}:"
+        echo >&2 "***     Username  : ${name}"
+        echo >&2 "***     Name      : ${lname}"
+        echo >&2 "***     Email     : ${email}"
+        echo >&2 "***     VPN group : ${lgroup}"
         yesno "*** Continue (y/n)? " || exit 0 ;;
     pkg|package)
-        echo >&2 "*** Create an installer package for ${name}"
+        echo >&2 "*** Create an installer package for ${name}:"
         yesno "*** Continue (y/n)? " || exit 0 ;;
     firmware)
         echo >&2 "*** Create DD-WRT firmware for ${name}"
@@ -633,6 +653,19 @@ gen_pkg() {
     rm -f ${pkg}.zip
     zip ${pkg}.{zip,exe} || die "failed to zip"
 
+    # Create a tarball of the config for Linux users
+    echo -e "\n>>> Creating config tarball for Linux users"
+    make_tmp_dir
+    mkdir -p ${tmp_dir}/openvpn || die
+   
+    cp ${key_dir}/ca.crt ${tmp_dir}/openvpn/ca.crt \
+       || die "Could not copy ca.crt"
+    cp ${key_dir}/${name}.crt ${tmp_dir}/openvpn/cert.pem \
+       || die "Could not copy ${name}.crt"
+    cp ${key_dir}/${name}.key ${tmp_dir}/openvpn/key.pem \
+       || die "Could not copy ${name}.key"
+    cp ${key_dir}/ta.key ${tmp_dir}/openvpn/ta.key \
+       || die "Could not copy ta.key"
 # TODO: create *.ovpn file for Linux users and package it
 #    # Create a tarball of the config for Linux users
 #    echo -e "\n>>> Creating config tarball for Linux users"
@@ -645,10 +678,7 @@ gen_pkg() {
 # Create a new DD-WRT router firmware image with client
 # cert/keys pre-installed and configured
 gen_firmware() {
-    tmp_dir=$(mktemp -d)  # Global for cleanup
-
-    [ "${tmp_dir}" ] || die "Could not create temp directory"
-    [ "${tmp_dir//\//}" ] || die "Temp dir (${tmp_dir}) is bogus"
+    make_tmp_dir  # Creates temp dir and set tmp_dir
 
     echo -e "\n>>> Unpacking original firmware"
     cd ${kit_dir} || die
