@@ -18,7 +18,7 @@ Usage: ${NAME} [-v] new <common_name> <email>
        ${NAME} [-v] firmware <common_name>
        ${NAME} [-v] revoke <common_name>
        ${NAME} [-v] show-cert [common_name]
-       ${NAME} [-v] show-access
+       ${NAME} [-v] show-access [--all]
        ${NAME} [-v] show-active
        ${NAME} [-v] new-ca
 
@@ -63,7 +63,9 @@ ${NAME} show-cert
     is specified then only show certificates for that client.
 
 ${NAME} show-access
-    Show connect/disconnect access log for all servers
+    Show connect/disconnect access logs for all servers for the past
+    1-2 weeks. The --all option will show all access logs that exist
+    on the servers (this may take a while to gather the logs).
 
 ${NAME} show-active
     Show current active connections for all servers
@@ -270,6 +272,7 @@ process_parameters() {
         --check)        check_only=1; ERROR_ASK=1       ;;
         --noask)        NO_ASK=1;                       ;;
         --noninter*)    NO_ASK=1;                       ;;
+        --all)          DO_ALL=1;                       ;;
         -*)             die "Unknown paramter $param"   ;;
         *)              non_opts="${non_opts} ${param}" ;;
         esac
@@ -308,13 +311,16 @@ derive_settings() {
     
     makensis=${makensis:-makensis}
     zip=${zip:-zip}
-    find_pkg=$(dirname $(ls -d ${top_dir}/*/openvpn-gui.nsi | tail -n1))
+    find_pkg=$(dirname $(ls -d ${top_dir}/*/openvpn-gui.nsi \
+               2>/dev/null | tail -n1) 2>/dev/null)
     nsis_dir=${nsis_dir:-${find_pkg}}
     nsis_file=${nsis_dir}/openvpn-gui.nsi
 
-    find_kit=$(dirname $(ls -d ${top_dir}/mod-kit/build_firmware.sh | tail -n1))
+    find_kit=$(dirname $(ls -d ${top_dir}/mod-kit/build_firmware.sh \
+               2>/dev/null | tail -n1) 2>/dev/null)
     kit_dir=${kit_dir:-${find_kit}}
-    fw_bin=$(ls -d ${top_dir}/dd-wrt*openvpn.bin | tail -n1)
+    fw_bin=$(ls -d ${top_dir}/dd-wrt*openvpn.bin \
+             2>/dev/null | tail -n1)
     
     ldapbase="dc=dept,dc=example,dc=com"
     ldapsearch=${ldapsearch:-ldapsearch}
@@ -495,6 +501,8 @@ sanity_checks() {
         ;;
     firmware)
         [ "${http_password}" ] || die "Failed to crypt password"
+        [ -d "${kit_dir}" ] || die "Failed to find firmware mod-kit"
+        [ -e "${fw_bin}" ] || die "Failed to find DD-WRT firmware"
         which gcc &>/dev/null || die "gcc command not found"
         which g++ &>/dev/null || die "g++ command not found"
         which make &>/dev/null || die "make command not found"
@@ -685,7 +693,7 @@ gen_pkg() {
     cp ${key_dir}/ta.key ${tmp_dir}/openvpn/ta.key \
        || die "Could not copy ta.key"
     cp ${cfg_dir}/linux.conf ${tmp_dir}/openvpn/client.conf \
-       || die "Could not copy router.conf"
+       || die "Could not copy linux.conf"
  
     tar czf ${pkg_dir}/openvpn-${name}-linux.tgz \
         -C ${tmp_dir} openvpn \
@@ -844,10 +852,18 @@ show_cert() {
 show_access_log() {
     local server raw data data_sorted user ip
     local d1 d2 d3 d4 d5 ignore who type rest
-    local date_unix vip line
+    local date_unix vip line logs
+
+    if [ "${DO_ALL}" ]; then
+        logs="/var/log/openvpn.log*"
+    else
+        logs="/var/log/openvpn.log /var/log/openvpn.log.1"
+    fi
+    echo >&2 -e "Gathering log data, please wait\n"
+
     for server in ${servers}; do
         raw="${data}$(ssh -o BatchMode=yes ${serv_user}@${server} \
-            'egrep -h "SENT|SIGUSR1" /var/log/openvpn.log*')" \
+            "egrep -h 'SENT|SIGUSR1' ${logs}")" \
             || die "Failed to get data from ${ssh_dest}"
         while read d1 d2 d3 d4 d5 ignore who type rest; do
             user=${who%/*}
