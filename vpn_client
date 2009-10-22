@@ -19,9 +19,6 @@
 NAME=$(basename ${0})
 VERBOSE=${VERBOSE:-}
 
-# Read in the LDAP/AD and server configuration file
-. ${0}.cfg
-
 # This should match the regex in the client-connect script
 re_access="^vpn[^0-9 ]*[\s=:]\s*(\d+)(?:$|\s$)"
 
@@ -158,6 +155,11 @@ Requirements/prerequisites:
 
 main() {
     process_parameters "$@"
+
+    # Read in the LDAP/AD and server configuration file
+    [ -e ${0}.cfg ] || die "Config ${0}.cfg not found (try ${0} --help)"
+    . ${0}.cfg
+
     derive_settings
     show_settings
     sanity_checks
@@ -1027,6 +1029,7 @@ show_active() {
 # -----------------------------------------------------------------------
 # All functions are now defined so call main
 # -----------------------------------------------------------------------
+
 main "$@"
 exit 0
 
