@@ -1,5 +1,20 @@
 #!/bin/bash
-# Written by Joel Martin <joel_martin@sil.org>
+# Copyright 2009 Summer Institue of Linguistics
+# Copyright 2009 Joel Martin <joel_martin@sil.org>
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Affero General Public License for more details.
+
+# A copy of the GNU Affero General Public License should be contained
+# at the end of this program. If not, see
+# <http://www.gnu.org/licenses/>.
 
 # Default user settings
 NAME=$(basename ${0})
@@ -18,8 +33,8 @@ Usage:
        ${NAME} [options] pkg <common_name>
        ${NAME} [options] firmware <common_name>
        ${NAME} [options] revoke <common_name>
-       ${NAME} [options] show-cert [common_name]
-       ${NAME} [options] show-access [--all]
+       ${NAME} [options] show-cert [--csv] [common_name]
+       ${NAME} [options] show-access [--csv] [--all]
        ${NAME} [options] show-active
        ${NAME} [options] new-ca
 
@@ -63,14 +78,16 @@ ${NAME} revoke
     Revoke the certificate for <common_name> and update the CRL
     (certificate revocation list) file and copy it to the server.
 
-${NAME} show-cert
+${NAME} show-cert [--csv]
     List valid, expired and revoked certificates. If <common_name>
-    is specified then only show certificates for that client.
+    is specified then only show certificates for that client. If --csv
+    is specified then the output will be comma separate values.
 
-${NAME} show-access
+${NAME} show-access [--csv] [--all]
     Show connect/disconnect access logs for all servers for the past
-    1-2 weeks. The --all option will show all access logs that exist
-    on the servers (this may take a while to gather the logs).
+    1-2 weeks. If --csv is specified then the output will be comma
+    separate values. The --all option will show all access logs that
+    exist on the servers (this may take a while to gather the logs).
 
 ${NAME} show-active
     Show current active connections for all servers
@@ -314,6 +331,7 @@ process_parameters() {
         --noask)        NO_ASK=1;                       ;;
         --noninter*)    NO_ASK=1;                       ;;
         --all)          DO_ALL=1;                       ;;
+        --csv)          DO_CSV=1;                       ;;
         -*)             die "Unknown paramter $param"   ;;
         *)              non_opts="${non_opts} ${param}" ;;
         esac
@@ -865,7 +883,9 @@ copy_crl() {
 show_cert() {
     local status d d1 d2 serial unknown client user email state
     local date_asn1 date_unix date_short now date_days
-    local pre valid expired revoked
+    local pre valid expired revoked csv title csvtitle
+    title=$(printf "  NUMBER   %-40s STATUS" "USERNAME <EMAIL>")
+    csv="NUMBER,USERNAME,EMAIL,STATUS,DAYS LEFT,VALID UNTIL DATE\n"
     now=$(date +%s)
     while read status d1 d2 serial unknown client; do
         case ${status} in
@@ -886,21 +906,27 @@ show_cert() {
         date_days=$(( (date_unix - now) / (60*60*24) ))
 
         # user readable state
-        title=$(printf "  NUMBER   %-40s STATUS" "USERNAME <EMAIL>")
         pre=$(printf   "  0x%-04x   %-40s" 0x${serial} "${user} <${email}>")
+        csv="${csv}${serial},${user},${email}"
         if [ "${status}" = "R" ]; then
             revoked="${revoked}${pre} revoked on ${date_short}\n"
+            csv="${csv},revoked,0,${date_short}\n"
         elif [ "${date_days}" -lt 0 ]; then
             expired="${expired}${pre} expired on ${date_short}\n"
+            csv="${csv},expired,0,${date_short}\n"
         else
             valid="${valid}${pre} ${date_days} days left (${date_short})\n"
+            csv="${csv},valid,${date_days},${date_short}\n"
         fi
-
     done < ${key_dir}/index.txt
-    echo
-    [ "${revoked}" ] && echo -e "Revoked:\n${title}\n${revoked}"
-    [ "${expired}" ] && echo -e "Expired:\n${title}\n${expired}"
-    [ "${valid}" ] && echo -e "Valid:\n${title}\n${valid}"
+    if [ "${DO_CSV}" ]; then
+        echo -e "${csv}"
+    else
+        echo
+        [ "${revoked}" ] && echo -e "Revoked:\n${title}\n${revoked}"
+        [ "${expired}" ] && echo -e "Expired:\n${title}\n${expired}"
+        [ "${valid}" ] && echo -e "Valid:\n${title}\n${valid}"
+    fi
 }
 
 show_access_log() {
@@ -931,22 +957,30 @@ show_access_log() {
         done <<< "${raw}"
     done
     data_sorted="$(echo -e "${data}" | sort -n)"
-    printf "%-19s  %-6s  %-15s %-15s %-15s %s\n" \
-        "Connect Time" \
-        "Status" \
-        "User" \
-        "Server IP" \
-        "Client IP" \
-        "Virutal IP"
+    if [ "${DO_CSV}" ]; then
+        echo "CONNECT TIME,STATUS,USER,SERVER IP,CLIENT IP,VIRTUAL IP"
+    else
+        printf "%-19s  %-6s  %-15s %-15s %-15s %s\n" \
+            "Connect Time" \
+            "Status" \
+            "User" \
+            "Server IP" \
+            "Client IP" \
+            "Virutal IP"
+    fi
     while read date_unix type user ip server vip; do
         [ "${date_unix}" ] || continue
         date=$(date +"%a %b %_d %T" -d "@${date_unix}")
-        printf "%-19s  ${type}  %-15s %-15s %-15s %s\n" \
-            "${date}" \
-            "${user}" \
-            "${server}" \
-            "${ip}" \
-            "${vip}"
+        if [ "${DO_CSV}" ]; then
+            echo "${date},${type},${user},${server},${ip},${vip}"
+        else
+            printf "%-19s  ${type}  %-15s %-15s %-15s %s\n" \
+                "${date}" \
+                "${user}" \
+                "${server}" \
+                "${ip}" \
+                "${vip}"
+        fi
     done <<< "${data_sorted}"
 }
 
