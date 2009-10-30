@@ -1,0 +1,1101 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+
+
+            <title>OpenVPN/LDAP Configuration</title>
+    
+    
+            
+<!-- include system resources -->
+<link type="text/css" rel="stylesheet" href="files/confluence.css" title="Confluence Master Stylesheet" media="all">
+<link type="text/css" rel="stylesheet" href="files/print.css" media="print">
+<!-- end system resources -->
+
+
+    <meta name="confluence-request-time" content="1249663976224">
+
+</head>
+<body id="com-atlassian-confluence">
+
+<div id="main">
+    
+        
+
+    <h1 id="title-heading" class="pagetitle">
+					            OpenVPN Configuration
+    </h1>
+
+
+<div id="content" class="page view">
+    
+        <div class="wiki-content">
+           <!-- wiki content -->
+            <p>There are several different systems that need to be configured in<br>
+            order to setup OpenVPN access to the EXAMPLE network using access polices<br>
+            stored in LDAP/Active Directory. This page describes the process of<br>
+            configuring each one. This document assumes that the primary edge<br>
+            firewall is a Juniper Netscreen and the core router is Cisco, however<br>
+            the basic principles should apply to any sufficiently powerful firewall<br>
+            and router.</p>
+
+<style type="text/css">/*<![CDATA[*/
+div.rbtoc1247587146657 {margin-left: 1.5em;padding: 0px;}
+div.rbtoc1247587146657 ul {list-style: disc;margin-left: 0px;}
+div.rbtoc1247587146657 li {margin-left: 0px;padding-left: 0px;}
+
+/*]]>*/</style><div class="rbtoc1247587146657">
+<ul>
+    <li><a href="#OpenVPNConfiguration-Goals">Goals</a></li>
+    <li><a href="#OpenVPNConfiguration-BigPicture">Big Picture</a></li>
+    <li><a href="#OpenVPNConfiguration-NetworkConfiguration">Network Configuration</a></li>
+<ul>
+    <li><a href="#OpenVPNConfiguration-DNSandOpenVPNserverIPassignment">DNS and OpenVPN server IP assignment</a></li>
+    <li><a href="#OpenVPNConfiguration-CiscoVLANs">Cisco VLANs</a></li>
+    <li><a href="#OpenVPNConfiguration-FirewallConfiguration">Firewall Configuration</a></li>
+</ul>
+    <li><a href="#OpenVPNConfiguration-ActiveDirectory">Active Directory</a></li>
+<ul>
+    <li><a href="#OpenVPNConfiguration-QueryUser">Query User</a></li>
+    <li><a href="#OpenVPNConfiguration-VPNGroups">VPN Groups</a></li>
+</ul>
+    <li><a href="#OpenVPNConfiguration-CertificateAuthority%28CA%29andWindowsPackagingSystem">Certificate Authority (CA) and Windows Packaging System</a></li>
+<ul>
+    <li><a href="#OpenVPNConfiguration-Setupca.example.com">Setup ca.example.com</a></li>
+    <li><a href="#OpenVPNConfiguration-CertificateAuthority%28CA%29">Certificate Authority (CA)</a></li>
+    <li><a href="#OpenVPNConfiguration-ClientToolsDownload">Client Tools Download</a></li>
+</ul>
+    <li><a href="#OpenVPNConfiguration-OpenVPNLinuxServer">OpenVPN Linux Server</a></li>
+<ul>
+    <li><a href="#OpenVPNConfiguration-installCentOS5.2">install CentOS 5.2</a></li>
+    <li><a href="#OpenVPNConfiguration-userconfiguration">user configuration</a></li>
+    <li><a href="#OpenVPNConfiguration-software">software</a></li>
+    <li><a href="#OpenVPNConfiguration-installopenvpnservice">install openvpn service</a></li>
+    <li><a href="#OpenVPNConfiguration-openvpnconfiguration">openvpn configuration</a></li>
+    <li><a href="#OpenVPNConfiguration-SELinux%2CiptablesandIPforwarding">SELinux, iptables and IP forwarding</a></li>
+    <li><a href="#OpenVPNConfiguration-DNS">DNS</a></li>
+    <li><a href="#OpenVPNConfiguration-Certificaterevocationaccessforthevpnuser%3A">Certificate revocation access for the <b>vpn</b> user:</a></li>
+    <li><a href="#OpenVPNConfiguration-Finalsteps%28logrotation%2Cstartservices%29">Final steps (log rotation, start services)</a></li>
+</ul>
+    <li><a href="#OpenVPNConfiguration-Miscellaneous%2FLinks">Miscellaneous / Links</a></li>
+</ul></div>
+
+<h2><a name="OpenVPNConfiguration-Goals"></a>Goals</h2>
+
+<p>The goals of the OpenVPN system are:</p>
+<ul>
+	<li><b>easy for users</b> to setup and use
+	<ul>
+		<li>Support for easy installation of the client on Windows XP and Vista systems</li>
+	</ul>
+	</li>
+	<li><b>easy to manage</b> and maintain
+	<ul>
+		<li>easy to add new users to the system</li>
+		<li>easy to create and modify new access policies</li>
+		<li>user access is logged</li>
+		<li>easy to disable user accounts</li>
+	</ul>
+	</li>
+	<li><b>secure</b>, access controls
+	<ul>
+		<li>only legitimate users are given access and only the level of access they require</li>
+		<li>the system maintains the security of the EXAMPLE network and the user's home network</li>
+		<li>user accounts expire</li>
+	</ul>
+	</li>
+	<li><b>scalable, and fault tolerant</b>
+	<ul>
+		<li>the system can easily scale with an increase in the number of users and amount of network traffic</li>
+		<li>vpn servers are redundant so that if one goes offline, users still have the ability to connect</li>
+	</ul>
+	</li>
+</ul>
+
+
+
+<h2><a name="OpenVPNConfiguration-BigPicture"></a>Big Picture</h2>
+
+<p>For a graphical step by step walkthrough of how the OpenVPN system works see <a href="walkthrough.html" title="OpenVPN Walkthrough">OpenVPN Walkthrough</a>.</p>
+
+<p>Various ongoing administrative tasks related to OpenVPN are documented in <a href="howto.html" title="OpenVPN HOWTOs">OpenVPN HOWTOs</a>.</p>
+
+<p>Here is the diagram of what the overall OpenVPN configuration looks like:</p>
+
+<p><img src="files/vpn0_full.png" align="absmiddle" border="0"></p>
+
+<hr>
+
+<h2><a name="OpenVPNConfiguration-NetworkConfiguration"></a>Network Configuration</h2>
+
+<h3><a name="OpenVPNConfiguration-DNSandOpenVPNserverIPassignment"></a>DNS and OpenVPN server IP assignment</h3>
+
+<p>The hostname for the OpenVPN servers as a group is <b>openvpn.example.com</b>.<br>
+Each OpenVPN server should be given an external and internal IP<br>
+address. All the IP addresses should have forward and reverse lookups<br>
+for <b>openvpn.example.com</b>. In other words, an external lookup for<br>
+"openvpn.example.com" should return multiple IP addresses (one per OpenVPN<br>
+server). It is also convenient to give each server it's own internal<br>
+hostname: <b>openvpn1.example.com</b>, <b>openvpn2.example.com</b>. </p>
+
+<p>The external IP addresses for the OpenVPN servers can be any available<br>
+external addresses. The internal addresses should be <b>'192.168.19.A'</b><br>
+where <b>A</b> is the OpenVPN server number starting at <b>100</b>. The MIP<br>
+mappings described below in the Netscreen firewall map the external to<br>
+internal addresses.</p>
+
+<h3><a name="OpenVPNConfiguration-CiscoVLANs"></a>Cisco VLANs</h3>
+
+<p>The OpenVPN server ports should be in their own separate VLAN. This<br>
+VLAN should be trunked (802.1q) over to the DMZ port on the firewall.</p>
+
+<ul>
+	<li>First create the <b>OpenVPN VLAN</b>:
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>vlan 19
+name openvpn
+exit
+</pre>
+</div></div></li>
+	<li>Then <b>add the ports</b> for the OpenVPN servers to that VLAN where<br>
+&lt;port&gt; is something like "g5/33":
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>config t
+inter &lt;port&gt;
+switchport mode access
+switchport access vlan 19
+end
+</pre>
+</div></div></li>
+	<li>The OpenVPN VLAN along with other DMZ VLANs should be <b>trunked</b> over to the<br>
+DMZ port on the firewall. Here is a sequence of commands which would accomplish<br>
+this where &lt;port&gt; is the Netscreen DMZ port, the default DMZ VLAN is <b>"3"</b> and<br>
+&lt;list&gt; is the list of DMZ VLANs to trunk to the Netscreen:
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>config t
+inter &lt;port&gt;
+switchport trunk encapsulation dot1q
+switchport trunk allow vlan 3,19,&lt;list&gt;
+switchport trunk native vlan 3
+switchport mode trunk
+no switchport access vlan 3
+</pre>
+</div></div></li>
+</ul>
+
+
+<h3><a name="OpenVPNConfiguration-FirewallConfiguration"></a>Firewall Configuration</h3>
+
+<p>Access from OpenVPN users to the EXAMPLE network is controlled and<br>
+enforced by the firewall(s) (Juniper Netscreen). The OpenVPN servers are<br>
+placed in their own firewall <b>Zone</b>.</p>
+
+<ul>
+	<li>Create the <b>"openvpn"</b> zone.
+	<ul>
+		<li>Go to "Network-&gt;Zones" and click "New" in the uppper right corner.</li>
+		<li>Use the following settings:
+<table class="confluenceTable"><tbody>
+<tr>
+<th class="confluenceTh"> Zone name </th>
+<td class="confluenceTd"> openvpn </td>
+</tr>
+<tr>
+<th class="confluenceTh"> Zone type </th>
+<td class="confluenceTd"> Layer 3 </td>
+</tr>
+</tbody></table></li>
+	</ul>
+	</li>
+	<li>Create a sub-interface for the VLAN that hosts the OpenVPN servers.
+	<ul>
+		<li>Go to "Network-&gt;Interfaces" page.</li>
+		<li>In the upper right select "Sub-IF" from the drop-down and then<br>
+click "New".</li>
+		<li>Use the following settings:
+<table class="confluenceTable"><tbody>
+<tr>
+<th class="confluenceTh"> Interface Name     </th>
+<td class="confluenceTd"> ethernet0/2 . 1 </td>
+</tr>
+<tr>
+<th class="confluenceTh"> Zone Name          </th>
+<td class="confluenceTd"> openvpn </td>
+</tr>
+<tr>
+<th class="confluenceTh"> IP Address/Netmask </th>
+<td class="confluenceTd"> 192.168.19.50 / 24 </td>
+</tr>
+<tr>
+<th class="confluenceTh"> Manageable         </th>
+<td class="confluenceTd"> Yes  </td>
+</tr>
+<tr>
+<th class="confluenceTh"> Manage IP          </th>
+<td class="confluenceTd"> blank </td>
+</tr>
+<tr>
+<th class="confluenceTh"> VLAN Tag           </th>
+<td class="confluenceTd"> 19 </td>
+</tr>
+<tr>
+<th class="confluenceTh"> Other Services, Ping </th>
+<td class="confluenceTd"> X  </td>
+</tr>
+</tbody></table></li>
+	</ul>
+	</li>
+	<li>Create <b>MIP mappings</b> from external IP addresses to the internal
+	<ul>
+		<li>Go to "Network-&gt;Interfaces" page.</li>
+		<li>Edit *"ethernet0/3" -&gt; MIP properties tab
+<table class="confluenceTable"><tbody>
+<tr>
+<th class="confluenceTh"> IP/netmask    </th>
+<th class="confluenceTh"> Host IP           </th>
+<th class="confluenceTh"> Netmask </th>
+<th class="confluenceTh"> VRouter </th>
+</tr>
+<tr>
+<td class="confluenceTd">  12.177.127.19 </td>
+<th class="confluenceTh"> 192.168.19.100    </th>
+<td class="confluenceTd"> 255.255.255.0 </td>
+<td class="confluenceTd"> trust-vr </td>
+</tr>
+<tr>
+<td class="confluenceTd">  12.177.127.<b>X</b> </td>
+<th class="confluenceTh"> 192.168.19.101    </th>
+<td class="confluenceTd"> 255.255.255.0 </td>
+<td class="confluenceTd"> trust-vr </td>
+</tr>
+</tbody></table></li>
+	</ul>
+	</li>
+	<li>Create a <b>static route</b> for each OpenVPN server. The destination will<br>
+be the vpn client subnet owned by that OpenVPN server and the gateway<br>
+for the route will be the OpenVPN server itself. For example, if there<br>
+are three OpenVPN servers then the static routes will look like this:
+	<ul>
+		<li>Click "Network"-&gt; "Routing" -&gt; "Destination":
+<table class="confluenceTable"><tbody>
+<tr>
+<th class="confluenceTh"> IP/netmask    </th>
+<th class="confluenceTh"> gateway           </th>
+<th class="confluenceTh"> Interface     </th>
+<th class="confluenceTh"> Protocol </th>
+<th class="confluenceTh"> Preference </th>
+</tr>
+<tr>
+<td class="confluenceTd">  10.100.0.0/16 </td>
+<td class="confluenceTd">  192.168.19.100    </td>
+<td class="confluenceTd">  ethernet0/2.19 </td>
+<td class="confluenceTd"> S        </td>
+<td class="confluenceTd"> 20          </td>
+</tr>
+<tr>
+<td class="confluenceTd">  10.101.0.0/16 </td>
+<td class="confluenceTd">  192.168.19.101    </td>
+<td class="confluenceTd">  ethernet0/2.19 </td>
+<td class="confluenceTd"> S        </td>
+<td class="confluenceTd"> 20          </td>
+</tr>
+<tr>
+<td class="confluenceTd">  10.102.0.0/16 </td>
+<td class="confluenceTd">  192.168.19.102    </td>
+<td class="confluenceTd">  ethernet0/2.19 </td>
+<td class="confluenceTd"> S        </td>
+<td class="confluenceTd"> 20          </td>
+</tr>
+</tbody></table></li>
+	</ul>
+	</li>
+	<li>Create <b>"OpenVPN Zone to Trust Zone"</b> policies
+<table class="confluenceTable"><tbody>
+<tr>
+<th class="confluenceTh"> Source                </th>
+<th class="confluenceTh"> Destination        </th>
+<th class="confluenceTh"> Service                        </th>
+<td class="confluenceTd"> Description </td>
+</tr>
+<tr>
+<td class="confluenceTd"> openvpn servers (openvpn.example.com) </td>
+<td class="confluenceTd"> domain.example.com  </td>
+<td class="confluenceTd">  DNS, LDAP, LDAP over ssl, ping </td>
+<td class="confluenceTd"> Internal DNS <br clear="all"> <b>client-connect</b> script to Active Directory queries </td>
+</tr>
+<tr>
+<td class="confluenceTd">  VPN - Admin Users <br clear="all"> (10.100.1.0/24, <br clear="all"> 10.101.1.0/24, <br clear="all"> 10.102.1.0/24) </td>
+<td class="confluenceTd"> server1
+<br clear="all"> server2 <br clear="all"> server3 <br clear="all"> server4 <br clear="all"> server5 </td>
+<td class="confluenceTd"> Any </td>
+<td class="confluenceTd"> Access level <b>1</b>: give admin users broad access </td>
+</tr>
+<tr>
+<td class="confluenceTd"> VPN - DB Admins <br clear="all"> (10.100.15.0/24, <br clear="all"> 10.101.15.0/24, <br clear="all"> 10.102.15.0/24) </td>
+<td class="confluenceTd"> server1
+<br clear="all"> server2 </td>
+<td class="confluenceTd"> Any </td>
+<td class="confluenceTd"> Access level <b>15</b>: DB admins </td>
+</tr>
+<tr>
+<td class="confluenceTd"> VPN - Intranet<br clear="all"> (10.100.30.0/24, <br clear="all"> 10.101.30.0/24, <br clear="all"> 10.102.30.0/24) </td>
+<td class="confluenceTd"> server3
+<br clear="all"> server4 </td>
+<td class="confluenceTd"> 80 443 </td>
+<td class="confluenceTd"> Access level <b>30</b>: Intranet users </td>
+</tr>
+</tbody></table></li>
+	<li>Create <b>"OpenVPN Zone to DMZ Zone"</b> policies
+<table class="confluenceTable"><tbody>
+<tr>
+<th class="confluenceTh"> Source                </th>
+<th class="confluenceTh"> Destination        </th>
+<th class="confluenceTh"> Service   </th>
+<td class="confluenceTd"> Description </td>
+</tr>
+<tr>
+<td class="confluenceTd"> VPN - Admin Users      </td>
+<td class="confluenceTd"> web servers  </td>
+<td class="confluenceTd">  Any </td>
+<td class="confluenceTd"> Access level <b>1</b>: give admin access to web servers </td>
+</tr>
+<tr>
+<td class="confluenceTd"> openvpn servers (openvpn.example.com) </td>
+<td class="confluenceTd"> dns.example.com (30)   </td>
+<td class="confluenceTd">  DNS, ping </td>
+<td class="confluenceTd"> External DNS </td>
+</tr>
+</tbody></table></li>
+	<li>Create <b>"Untrust Zone to openvpn Zone"</b> policies
+<table class="confluenceTable"><tbody>
+<tr>
+<th class="confluenceTh"> Source </th>
+<th class="confluenceTh"> Destination                                 </th>
+<th class="confluenceTh"> Service </th>
+<td class="confluenceTd"> Description </td>
+</tr>
+<tr>
+<td class="confluenceTd"> Any     </td>
+<td class="confluenceTd"> MIP (<b>External IP 1</b>) <br clear="all">  MIP (<b>External IP 2</b>) </td>
+<td class="confluenceTd"> OPENVPN, PING AND SSH </td>
+<td class="confluenceTd"> Allow external users to connect to openvpn servers  </td>
+</tr>
+</tbody></table></li>
+	<li>Create <b>"Trust Zone to openvpn Zone"</b> policies
+<table class="confluenceTable"><tbody>
+<tr>
+<th class="confluenceTh"> Source </th>
+<th class="confluenceTh"> Destination           </th>
+<th class="confluenceTh"> Service </th>
+<td class="confluenceTd"> Description </td>
+</tr>
+<tr>
+<td class="confluenceTd"> Any     </td>
+<td class="confluenceTd"> openvpn - openvpn.example.com </td>
+<td class="confluenceTd"> Any      </td>
+<td class="confluenceTd"> open internal access to openvpn servers </td>
+</tr>
+</tbody></table></li>
+	<li>Create <b>"DMZ Zone to openvpn Zone"</b> policies
+<table class="confluenceTable"><tbody>
+<tr>
+<th class="confluenceTh"> Source </th>
+<th class="confluenceTh"> Destination                                 </th>
+<th class="confluenceTh"> Service </th>
+<td class="confluenceTd"> Description </td>
+</tr>
+<tr>
+<td class="confluenceTd"> Any     </td>
+<td class="confluenceTd"> MIP (<b>External IP 1</b>) <br clear="all">  MIP (<b>External IP 2</b>) </td>
+<td class="confluenceTd"> OPENVPN, PING AND SSH </td>
+<td class="confluenceTd"> Allow users in guest nets to connect to openvpn servers  </td>
+</tr>
+</tbody></table></li>
+</ul>
+
+
+<hr>
+
+<h2><a name="OpenVPNConfiguration-ActiveDirectory"></a>Active Directory</h2>
+
+<h3><a name="OpenVPNConfiguration-QueryUser"></a>Query User</h3>
+
+<p>When a user connects to the openvpn service, the <b>"client-connect.py"</b><br>
+script will be executed. This script will query the Active Directory<br>
+domain and determine the VPN group that the user is a member of. The<br>
+VPN group membership will determine what access level the user is<br>
+given.</p>
+
+<ul>
+	<li>Add a user named <b>"vpnquery"</b> to Active Directory. This user should<br>
+be given read-only access. The <b>"client-connect.py"</b> script will login<br>
+to the AD domain in order to lookup user and group information.</li>
+	<li>Set the <b>"vpnquery"</b> user password to a strong password.</li>
+</ul>
+
+
+<h3><a name="OpenVPNConfiguration-VPNGroups"></a>VPN Groups</h3>
+
+<p>Different sets of users will have different levels of access to the<br>
+network via the openvpn system. Each access level is mapped to an Active<br>
+Directory group and users are made members of the group that maps to the access<br>
+level the user is assigned.</p>
+
+<p>The lowest access level number gives the highest level of access and<br>
+the higher the access level number the more restricted the access. If<br>
+a user is a member of more than one VPN group, then they will be<br>
+assigned the lowest access level number (highest permission level)<br>
+from those groups.</p>
+
+<ul>
+	<li>Create a VPN Active Directory group for each access level. The group name<br>
+must start with the string "VPN ".</li>
+	<li>In the "Notes" field of the group the access level is assigned. For<br>
+example, to assign a group to access level <b>"15"</b>, the following<br>
+should be added to the Notes field:
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>vpn_access: 15
+</pre>
+</div></div></li>
+        <li>This assumes a fairly standard Active Directory schema. For other LDAP<br>
+        systems, <b>"client-connect.py"</b> may need modification.</li>
+	<li>Make VPN users members of the appropriate VPN group.</li>
+</ul>
+
+
+<hr>
+
+<h2><a name="OpenVPNConfiguration-CertificateAuthority(CA)andWindowsPackagingSystem"></a>Certificate Authority (CA) and Windows Packaging System</h2>
+
+<p>In order for a user to have access to the OpenVPN system, they must<br>
+have a user certificate/key file that is signed by the same root<br>
+Certificate Authority that has signed the server key file that is on<br>
+each OpenVPN server.</p>
+
+<p>The Certificate Authority (CA) key file should be<br>
+kept super secret because access to that file allows a valid signed<br>
+client certificate/key to be created (and likewise creation of<br>
+a valid signed server certificate/key). In particular, the CA key<br>
+file should not be kept on the OpenVPN servers. It is not needed on<br>
+the server and if the CA is compromised then a new CA must<br>
+be created and all client and server certificate/keys must also be<br>
+recreated and signed by the new CA.</p>
+
+<p>The system where certificates are created and revoked and where the<br>
+Windows Installer packaging is done should be a well secured Linux<br>
+server. Preferably one that has user access limited to just those<br>
+users that need to manage VPN certificates.</p>
+
+
+<h3><a name="OpenVPNConfiguration-Setupca.example.com"></a>Setup ca.example.com</h3>
+
+<p>The certificate management system is named ca.example.com. These instructions work<br>
+with Linux server with Ubuntu Server 9.04 (Jaunty, 32-bit).</p>
+
+<p>Here are the steps to prepare a Linux server to be a certificate<br>
+management system:</p>
+<ul>
+	<li>Install the <b>nsis</b> and <b>zip</b> packages:
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>sudo apt-get install nsis zip git openvpn openssl
+</pre>
+</div></div></li>
+	<li>Create the vpn user for certificate managment.
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>sudo useradd -m -G sambashare -s /bin/bash vpn
+sudo passwd vpn
+</pre>
+</div></div></li>
+	<li>Create a packages directory
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>sudo mkdir -p /home/vpn/packages
+</pre>
+</div></div></li>
+<li>You may also want to share the packages directory via samba (i.e. if the<br>
+help desk users are running Windows and will be emailing the packages) by adding<br>
+the following settings to <b><tt>/etc/samba/smb.conf</tt></b>:
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>    security = user
+    [vpn_packages]
+        comment = VPN Windows Installer Packages
+        read only = no
+        path = /home/vpn/packages
+        guest ok = no
+        write list = vpn, @admin
+</pre>
+</div></div></li>
+	<li>Restart samba
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>sudo /etc/init.d/samba restart
+</pre>
+</div></div></li>
+</ul>
+
+
+<h3><a name="OpenVPNConfiguration-ClientToolsDownload">Client Tools Download</a></h3>
+
+<p>If you haven't done so already, download and setup the OpenVPN LDAP<br>
+integration project onto the the Certificate Authority system.
+<ul>
+	<li>Use git to clone the project into the 'client' subdirectory:
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>git clone git@github.com:kanaka/OpenVPN-LDAP-Integration.git client
+</pre>
+</div></div></li>
+        <li>Follow the instructions in the <b>README</b> file to download, unpack<br>
+        and setup the additional items needed for Windows client packaging and for<br>
+        DD-WRT router firmware generation.</li>
+</ul>
+
+
+<h3><a name="OpenVPNConfiguration-CertificateAuthority(CA)"></a>Certificate Authority (CA)</h3>
+
+<p>Create a new certification authority as the vpn user on
+ca.example.com:</p>
+<ul>
+        <li>Use the <b>'vpn_client'</b> script to create a new CA:
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>cd client
+./vpn_client new-ca
+</pre>
+</div></div></li>
+</ul>
+
+<p>The certificate authority, key index, and all user certificates and keys live<br>
+in the <b><tt>/home/vpn/client/keys</tt></b> on the <b>ca.example.com</b> server.</p>
+
+<p>Here is a list of files in the <b>'keys'</b> directory and their function:</p>
+<table class="confluenceTable"><tbody>
+<tr>
+<th class="confluenceTh"> ca.crt          </th>
+<td class="confluenceTd"> The master CA certificate </td>
+</tr>
+<tr>
+<th class="confluenceTh"> ca.key          </th>
+<td class="confluenceTd"> The master CA private key (<font color="red">keep super secret</font>) </td>
+</tr>
+<tr>
+<th class="confluenceTh"> crl.pem         </th>
+<td class="confluenceTd"> CRL - signed list of revoked certificates </td>
+</tr>
+<tr>
+<th class="confluenceTh"> server.crt      </th>
+<td class="confluenceTd"> The server CA signed certificate </td>
+</tr>
+<tr>
+<th class="confluenceTh"> server.key      </th>
+<td class="confluenceTd"> The server CA signed private key (<font color="red">keep secret</font>) </td>
+</tr>
+<tr>
+<th class="confluenceTh"> index.txt       </th>
+<td class="confluenceTd"> The master CA list of client keys, serial number, expiration dates and revocation status </td>
+</tr>
+<tr>
+<th class="confluenceTh"> serial          </th>
+<td class="confluenceTd"> File containing next key index number (in hex) </td>
+</tr>
+<tr>
+<th class="confluenceTh"> ta.key          </th>
+<td class="confluenceTd"> Shared/symmetrical static key (<font color="red">keep secret</font>) </td>
+</tr>
+<tr>
+<th class="confluenceTh"> dh1024.pem      </th>
+<td class="confluenceTd"> Diffie-Helman parameters </td>
+</tr>
+<tr>
+<th class="confluenceTh"> &lt;username&gt;.crt  (multiple) </th>
+<td class="confluenceTd"> &lt;username&gt;'s CA signed certificate file </td>
+</tr>
+<tr>
+<th class="confluenceTh"> &lt;username&gt;.key  (multiple) </th>
+<td class="confluenceTd"> &lt;username&gt;'s CA signed private key file (<font color="red">keep secret</font>)</td>
+</tr>
+<tr>
+<th class="confluenceTh"> &lt;username&gt;.p12  (multiple) </th>
+<td class="confluenceTd"> &lt;username&gt;'s CA signed, encrypted and password protected PKCS12 key/crt </td>
+</tr>
+</tbody></table>
+
+<p>The configuration files for creating keys and for the client software<br>
+are stored in the <b><tt>/home/vpn/client/config</tt></b> directory on the<br>
+<b>ca.example.com</b> server.</p>
+
+<p>Here is a list of files in the <b>'config'</b> directory and their function:</p>
+<table class="confluenceTable"><tbody>
+<tr>
+<th class="confluenceTh"> client.ovpn     </th>
+<td class="confluenceTd"> The Windows OpenVPN client configuration </td>
+</tr>
+<tr>
+<th class="confluenceTh"> linux.conf      </th>
+<td class="confluenceTd"> The Linux OpenVPN client configuration </td>
+</tr>
+<tr>
+<th class="confluenceTh"> openssl.cnf     </th>
+<td class="confluenceTd"> The certificate management configuration </td>
+</tr>
+<tr>
+<th class="confluenceTh"> router.conf     </th>
+<td class="confluenceTd"> The main Linksys WRT54GL OpenVPN client configuration </td>
+</tr>
+<tr>
+<th class="confluenceTh"> nvram/          </th>
+<td class="confluenceTd"> Additional Linksys WRT54GL OpenVPN configuration files </td>
+</tr>
+<tr>
+<th class="confluenceTh"> S02openvpn      </th>
+<td class="confluenceTd"> The Linksys WRT54GL OpenVPN startup script </td>
+</tr>
+</tbody></table>
+
+<div class="panelMacro"><table class="warningMacro"><colgroup><col width="24"><col></colgroup><tbody><tr><td valign="top"><img src="files/forbidden.gif" alt="" width="16" align="absmiddle" border="0" height="16"></td><td>All the files in <b><tt>/home/vpn/client/</tt></b> should be backed up<br>
+regularly.</td></tr></tbody></table></div>
+
+<p>If the certificate management server is being restored or recreated,<br>
+after the OpenVPN-LDAP-Integration directory is cloned using git, the
+keys and config directories should be restored from a backup.</p>
+
+
+
+
+<hr>
+
+<h2><a name="OpenVPNConfiguration-OpenVPNLinuxServer"></a>OpenVPN Linux Server</h2>
+
+<p>The OpenVPN clients will connect the OpenVPN servers. This section<br>
+describes how to configure the OpenVPN servers so that in addition to<br>
+the LDAP/Active Directory integrated authentication, multiple servers<br>
+can be used to provide redundancy and performance scaling.<br>
+
+<p>These instructions are oriented at configuring CentOS 5.2 servers<br>
+since the SELinux support in RHEL/CentOS is well established. However,<br>
+these instructions should be adaptable to any Linux distrubution. In<br>
+addition to describing how to configure the OpenVPN servers with the<br>
+LDAP/Active Directory integrated authentication, the setup of multiple<br>
+servers is described which provides redundancy and performance scaling.<br>
+
+<h3><a name="OpenVPNConfiguration-installCentOS5.2"></a>install CentOS 5.2</h3>
+
+<ul>
+	<li>Burn an bootable ISO image for CentOS 5.2 and then boot the system from CD 1 or the DVD.
+	<ul>
+		<li>For the network configuration use a manual connection and the<br>
+following settings:
+		<ul>
+			<li>IP: 192.168.19.XXX (XXX is 100 for first server, 101 for second, etc)</li>
+			<li>gateway: 192.168.19.50.</li>
+			<li>hostname: openvpnX.example.com (X is server number)</li>
+		</ul>
+		</li>
+		<li>Set the root password to the normal setting (later this will be<br>
+disabled for remote logins)</li>
+		<li>When selecting packages, choose the "Server" option but unselect<br>
+the "Desktop - Gnome" option (having a GUI is a security risk).</li>
+		<li>After rebooting you will be prompted with another configuration<br>
+screen. Use the following options:
+		<ul>
+			<li>Choose Authorization-&gt;MD5 Passwords</li>
+			<li>Firewall-&gt;Security Level Enabled</li>
+			<li>Firewall-&gt;SELinux: Enforcing</li>
+			<li>Under Services, turn off: autofs, avahi-daemon, bluetooth, cups,<br>
+gpm, isdn</li>
+		</ul>
+		</li>
+	</ul>
+	</li>
+</ul>
+
+
+<h3><a name="OpenVPNConfiguration-userconfiguration"></a>user configuration</h3>
+
+<ul>
+	<li>Log in as root and edit <b>'/etc/sudoers'</b> and activate the use of the <b>wheel</b><br>
+group for sudo. This allows members of the "wheel" group (/etc/group) to be<br>
+able to use sudo to run commands with root privilege. Uncomment the line<br>
+starting with "# %wheel" so that it looks like this:
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>%wheel  ALL=(ALL)       ALL
+</pre>
+</div></div></li>
+	<li>Add additional users that can use sudo:
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+useradd -m -s /bin/bash -G wheel smith
+passwd smith
+</pre>
+</div></div></li>
+	<li>Log back in as a normal user and use sudo from now on instead of using a root<br>
+prompt (this is standard best practice for UNIX like systems).</li>
+	<li>Configure <b>'/etc/ssh/sshd_config'</b> so that only non-root users may login via<br>
+ssh (to enforce using sudo).
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>...
+PermitRootLogin no
+AllowUsers smith openvpn
+...
+X11Forwarding no
+...
+</pre>
+</div></div></li>
+</ul>
+
+
+<h3><a name="OpenVPNConfiguration-software"></a>software</h3>
+<ul>
+	<li>A secure server should only have software that is needed for the<br>
+service being provided. Unnecessary software should be removed since<br>
+it increases security risk.</li>
+	<li>Remove other uneeded GUI software for security:
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>sudo yum remove xorg-x11-server-Xorg gnome-vfs2 xorg-x11-font-utils
+</pre>
+</div></div></li>
+	<li>Remove other uneeded software for security:
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>sudo yum remove php-common qt SDL vnc vnc-server
+</pre>
+</div></div></li>
+	<li>Install some useful diagnostic packages
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>sudo yum install nmap screen openldap-clients
+</pre>
+</div></div></li>
+	<li>Start ntpd for time synchronization
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>sudo /sbin/chkconfig --levels 345 ntpd on
+sudo /etc/init.d/ntpd start
+</pre>
+</div></div></li>
+	<li>Stop unneeded services (ignore failure messages):
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>for service in bluetooth pcscd rpcidmapd nfslock gpm cups; do
+    sudo /sbin/chkconfig ${service} off
+    sudo /etc/init.d/${service} stop
+done
+</pre>
+</div></div></li>
+</ul>
+
+
+
+<h3><a name="OpenVPNConfiguration-installopenvpnservice"></a>install openvpn service</h3>
+
+<ul>
+	<li>Setup the <b>rpmforge</b> package repository
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>wget http://dag.wieers.com/rpm/packages/rpmforge-release/rpmforge-release-0.3.6-1.el5.rf.i386.rpm
+sudo rpm -Uvh rpmforge-release-0.3.6-1.el5.rf.i386.rpm
+</pre>
+</div></div></li>
+	<li>Install the openvpn package from rpmforge
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>sudo yum install openvpn
+</pre>
+</div></div></li>
+	<li>Create an openvpn user/group for the daemon to run as (i.e. leave<br>
+the password locked).
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>sudo /usr/sbin/useradd -m openvpn
+</pre>
+</div></div></li>
+	<li>Give ownership of the openvpn configuration directory to the openvpn<br>
+user and openvpn group:
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>sudo chown openvpn.openvpn /etc/openvpn
+sudo chmod g+w /etc/openvpn
+</pre>
+</div></div></li>
+	<li>Add smith to the openvpn group so that the smith user can modify<br>
+openvpn configuration files.
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>sudo /usr/sbin/usermod -a -G openvpn smith
+</pre>
+</div></div></li>
+</ul>
+
+
+
+<h3><a name="OpenVPNConfiguration-openvpnconfiguration"></a>openvpn configuration</h3>
+
+<ul>
+	<li>From the master certificate/client creationg system (ca.example.com),<br>
+copy the server configuration and certificates to the <b>/etc/openvpn/</b><br>
+directory on the server. Do not copy the private Certificate Authority<br>
+key (ca.key).
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>ssh vpn@ca.example.com
+cd ~/client/keys
+scp dh1024.pem crl.pem ca.crt server.crt server.key ta.key smith@openvpnX.example.com:/etc/openvpn
+cd ~/server
+scp client-connect.py server.conf dh1024.pem smith@openvpnX.example.com:/etc/openvpn
+scp openvpn.te smith@openvpnX.example.com:
+</pre>
+</div></div></li>
+	<li>Back on the server, edit the <b>"/etc/openvpn/server.conf"</b> and change<br>
+the following two setting to match the current server's configuration,<br>
+where "ZZZ" is the number associated with this server (i.e. 100 for<br>
+the first openvpn server, 101 for the second, etc):
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>...
+server 10.ZZZ.0.0 255.255.0.0
+...
+push "dhcp-option DNS 192.168.19.ZZZ" 
+...
+</pre>
+</div></div></li>
+	<li>Create the configuration file <b>"/etc/openvpn/client-connect.cfg"</b><br>
+for the <b>"client-connect"</b> script that specifies how the script should<br>
+connect to Active Directory.  Replace "&lt;PASSWORD&gt;" with the password<br>
+for the "vpnquery" user that was created above. In this example '172.20.0.5'<br>
+is the address of an Active Directory domain server.
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>ldap_server = ldap://172.20.0.5
+# Query account and password
+ldap_dn = cn=vpnquery,cn=Users,dc=dept,dc=example,dc=com
+ldap_password = &lt;PASSWORD&gt;
+# Search for "VPN*" groups in ldap_group_dn
+ldap_group_dn = cn=users,dc=dept,dc=example,dc=com
+</pre>
+</div></div></li>
+	<li>Set the ownership and file permissions so that only the openvpn user<br>
+and users in the openvpn group can access the new configuration:
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>sudo chown -R openvpn.openvpn /etc/openvpn/
+sudo chmod ug+rw,o-rwx /etc/openvpn/*
+</pre>
+</div></div></li>
+	<li>Make the client-script executable
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>sudo chmod u+x /etc/openvpn/client-connect.py
+</pre>
+</div></div></li>
+</ul>
+
+
+
+<h3><a name="OpenVPNConfiguration-SELinux,iptablesandIPforwarding"></a>SELinux, iptables and IP forwarding</h3>
+
+<p>SELinux a system that enforces fine-grained security policies at many<br>
+levels of a Linux system. Each package or service that is installed on<br>
+a SELinux enabled system usually requires an SELinux module that<br>
+permits that package to be able do the actions on the system that it<br>
+requires to operate. Packages that distributed with a SELinux enabled<br>
+distribution typically will have an SELinux module as part of the<br>
+package installation. However, the openvpn package comes from the<br>
+<b>rpmforge</b> repository and does not comes with an SELinux module so<br>
+one must be created.</p>
+
+<ul>
+	<li>Compile and add the definitions in that module to the running<br>
+SELinux policy set. The <b>openvpn.te</b> file that was copied above,<br>
+contains the SELinux policy definitions required to run the openvpn<br>
+service.
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>checkmodule -M -m -o openvpn.mod openvpn.te
+semodule_package -o openvpn.pp -m openvpn.mod
+sudo /usr/sbin/semodule -i openvpn.pp
+</pre>
+</div></div></li>
+	<li>Explicitly permit openvpn to create a management port:
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>sudo /usr/sbin/semanage port -a -t openvpn_port_t -p tcp 7505
+</pre>
+</div></div></li>
+</ul>
+
+
+<p>The default firewall (iptables) ruleset on CentOS 5.2 is fairly locked<br>
+down. In order to allow remote OpenVPN clients to connect and to<br>
+forward traffic via the OpenVPN server, two rules must be added to<br>
+ruleset. Also, allow ssh connections to the system.</p>
+
+<ul>
+	<li>Edit <b>/etc/sysctl.conf</b> and turn on IP forwarding on boot:
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>net.ipv4.ip_forward = 1
+</pre>
+</div></div></li>
+	<li>Update the running state:
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>sudo sysctl -p /etc/sysctl.conf
+</pre>
+</div></div></li>
+</ul>
+
+
+<ul>
+	<li>Edit <b>/etc/sysconfig/iptables</b> and add the following rules right<br>
+before the final "REJECT" line.
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre># OpenVPN Rules
+-A RH-Firewall-1-INPUT -m state --state NEW -m udp -p udp --dport 1194 -j ACCEPT
+-A RH-Firewall-1-INPUT -i tun0 -j ACCEPT
+
+# Allow SSH
+-A RH-Firewall-1-INPUT -m state --state NEW -m tcp -p tcp --dport 22 -j ACCEPT
+</pre>
+</div></div></li>
+	<li>Start Restart the firewall to update the rules
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>sudo /etc/init.d/iptables restart
+</pre>
+</div></div></li>
+</ul>
+
+
+
+<h3><a name="OpenVPNConfiguration-DNS"></a>DNS</h3>
+
+<p>In some cases servers may be visible to OpenVPN clients of the <br>
+EXAMPLE network by both an internal IP address and an external one,
+for example, an IMAP server may have an internal and external mapping.<br>
+In some cases it may cause problems if the clients use the internal
+mapping or switch back and forth when activating and deactivating<br>
+their OpenVPN client.</p>
+
+<p>To solve this problem, the OpenVPN server runs a DNS proxy called<br>
+<b>"dnsmasq"</b> which has the capability to route DNS based on the domain<br>
+name of the hostname that is being resolved. When users connect to the<br>
+OpenVPN system, the client's are configured to use the OpenVPN server<br>
+itself as the DNS server which then proxies requests appropriately.</p>
+
+<ul>
+	<li>Install <b>"dnsmasq"</b>
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>sudo yum install dnsmasq
+</pre>
+</div></div></li>
+	<li>Add the following settings to the dnsmasq configuration file<br>
+<b>"/etc/dnsmasq.conf"</b> where '172.21.1.35' is the DMZ DNS server for<br>
+external address mappings and '172.20.0.12' is the internal trust network<br>
+DNS server.
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>no-resolv
+server=/imap.example.com/172.21.1.35
+server=/example.com/172.20.0.12
+server=//172.20.0.12
+server=172.21.1.35
+server=/19.168.192.in-addr.arpa/172.20.0.12
+server=/20.172.in-addr.arpa/172.20.0.12
+except-interface=eth0
+</pre>
+</div></div>
+	<ul>
+		<li>The lines beginning with "server=" indicate how DNS requests should<br>
+be redirected. The default DNS server is "172.21.1.35". However, if<br>
+the hostname that is being queried matches the name between the<br>
+slashes, then the alternate DNS server will be used instead.</li>
+		<li>The line "no-resolv" indicates that dnsmasq should not read the<br>
+"/etc/resolv.conf" file for the list of DNS servers. The DNS servers<br>
+are specified using the "server=" configuration lines and we want to<br>
+be able to put the local system in "/etc/resolv.conf".</li>
+		<li>The "except-interfaces=eth0" line indicates that dnsmasq should not<br>
+answer DNS requests to its external network interface (only local and<br>
+tunneled VPN clients are allowed to query).</li>
+	</ul>
+	</li>
+	<li>Add the localhost to the top of the DNS resolution list in<br>
+<b>"/etc/resolv.conf"</b> so that DNS resolution requests from the openvpn<br>
+server itself will be resolved in the same way as for the clients.<br>
+This is not critical, but it can be misleading for debugging later if<br>
+the DNS resolution happens differently. Here is what<br>
+<b>"/etc/resolv.conf"</b> should contain:
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>search example.com dept.example.com
+nameserver 127.0.0.1
+</pre>
+</div></div></li>
+	<li>Start dnsmasq when the system boots
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>sudo chkconfig --levels 345 dnsmasq on
+</pre>
+</div></div></li>
+</ul>
+
+
+
+<h3><a name="OpenVPNConfiguration-Certificaterevocationaccessforthevpnuser:"></a>Certificate revocation access for the <b>vpn</b> user:</h3>
+
+<p>In order to allow straight forwards revocation of client certificates,<br>
+the <b>vpn</b> user on the certificate management server should be given<br>
+the ability to make a secure shell connection to the OpenVPN servers<br>
+a DSA key and without a password.</p>
+
+<ul>
+	<li>Log into <b>ca.example.com</b> as the <b>vpn</b> user. If you haven't already<br>
+done so then generate a DSA key pair for ssh. If you are setting up<br>
+a second OpenVPN server, then you should NOT regnerate the key or you<br>
+will break access to the first server.
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>ssh vpn@ca.example.com
+mkdir -p ~/.ssh
+chmod 0700 ~/.ssh
+ssh-keygen -t dsa -f ~/.ssh/id_dsa -P ''
+chmod 0600 ~/.ssh/id_dsa*
+</pre>
+</div></div></li>
+	<li>Copy the public half of the key to the OpenVPN server.
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>scp ~/.ssh/id_dsa.pub smith@openvpnX.example.com:
+</pre>
+</div></div></li>
+	<li>Log into the OpenVPN server and add the public key to the openvpn<br>
+user's <b><tt>authorized_keys</tt></b> file.
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>ssh smith@openvpn.example.com
+sudo mkdir -p ~openvpn/.ssh
+sudo chmod 0700 ~openvpn/.ssh
+sudo bash -c 'cat id_dsa.pub &gt; ~openvpn/.ssh/authorized_keys'
+sudo chmod 0600 ~openvpn/.ssh/authorized_keys
+sudo chown -R openvpn.openvpn ~openvpn/.ssh/
+sudo rm id_dsa.pub
+</pre>
+</div></div></li>
+</ul>
+
+
+
+<h3><a name="OpenVPNConfiguration-Finalsteps(logrotation,startservices)"></a>Final steps (log rotation, start services)</h3>
+
+<ul>
+	<li>Turn on log rotation for the openvpn log file by creating a new file<br>
+named <b>"/etc/logrotate.d/openvpn"</b> that contains the following:
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>/var/log/openvpn.log {
+    weekly
+    rotate 5
+    copytruncate
+    notifempty
+    missingok
+}
+</pre>
+</div></div></li>
+	<li>Start the openvpn service
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>sudo /etc/init.d/dnsmasq start
+sudo /etc/init.d/openvpn start
+</pre>
+</div></div></li>
+	<li>Allow openvpn user to read from status and log files:
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>sudo chown openvpn.openvpn /var/log/openvpn.log /var/run/openvpn/openvpn-status.log
+</pre>
+</div></div></li>
+	<li>The system should now be ready to go. Test connectivity from a client machine</li>
+</ul>
+
+
+<h2><a name="OpenVPNConfiguration-Miscellaneous/Links"></a>Miscellaneous / Links</h2>
+
+<p>Microsoft Knowledge base <a href="http://support.microsoft.com/default.aspx?scid=kb;en-us;311218&amp;Product=winxp" rel="nofollow">article</a> describing how to work around DNS ordering bug.</p>
+
+<p>OpenVPN <a href="http://openvpn.net/index.php/open-source/documentation.html" rel="nofollow">documentation page</a>.</p>
+
+<p>OpenVPN <a href="http://openvpn.net/index.php/open-source/faq.html" rel="nofollow">FAQ</a>.</p>
+        </div>
+
+    </div>
+</div>
+
+            
+            
+</body></html>

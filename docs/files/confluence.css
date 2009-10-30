@@ -1,0 +1,1556 @@
+/* FROM: /s/1517/27/1.0/_/download/resources/confluence.web.resources%3Amaster-styles/master.css */
+
+/* Confluence master stylesheet */
+body {
+    margin: 0;
+    padding: 0;
+    background-color: #f0f0f0;
+}
+
+body, p, td, table, tr, .bodytext, .stepfield {
+    font-size: 10pt;
+    line-height: 1.3;
+    color: #000;
+    font-weight: normal;
+}
+
+#PageContent {
+    text-align: left;
+    background-color: #fff;
+    padding: 0 0 20px 0;
+    margin: 0;
+}
+
+.print-only {
+    display: none;
+}
+
+.monospaceInput {
+    font: 10pt monospace;
+}
+
+pre {
+    padding: 0;
+    margin: 10px 0;
+    text-align: left;
+    overflow: auto;
+}
+
+.pageSection {
+    margin-top: 10px;
+    clear: both;
+}
+
+
+.pageSectionHeader {
+    margin-bottom: 5px;
+    padding: 2px 0;
+    border-bottom-width: 1px;
+    border-bottom-style: solid;
+}
+
+.pageSectionHeader.summary {
+    border-bottom: none;
+}
+
+.pageSectionBody {
+    margin-top: 4px;
+}
+
+a.grey:link { color: #666; }
+a.grey:visited { color: #666; }
+a.grey:active { color: #666; }
+a.grey:hover { color: #666; }
+
+.topRow {
+    border-top-width: 2px;
+    border-top-style: solid;
+}
+
+.tabletitle {
+    font-size: 10pt;
+    font-weight: bold;
+    padding: 3px 0 2px 0;
+    margin: 8px 4px 2px 0;
+    border-bottom-width: 2px;
+    border-bottom-style: solid;
+}
+
+.tabletitleops {
+    float: right;
+}
+.tabletitleops, .tabletitleops a, .tabletitleops img {
+    vertical-align: middle;
+}
+.tabletitleops img {
+    border: none;
+}
+
+.fullWidth {
+    width: 100%;
+}
+
+.pagesubheading {
+    color: #666;
+    font-size: 10px;
+    padding: 0 0 5px 0;
+}
+
+hr {
+    color: #3c78b5;
+    height: 1px;
+}
+
+h1 a:link, h1 a:visited, h1 a:active {
+    text-decoration: none;
+}
+
+.logocell {
+    padding: 10px;
+}
+
+input {
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 10pt;
+    color: #000;
+}
+
+.endsection {
+    text-align: right;
+    color: #666;
+    margin-top: 10px;
+}
+h1, h2, h3, h4, h5, h6 {
+    line-height: normal;
+    font-weight: bold;
+    padding: 2px;
+}
+
+h1 {
+    font-size: 24px;
+    margin: 36px 0 4px 0;
+}
+
+h2 {
+    font-size: 18px;
+    margin: 27px 0 4px 0;
+}
+
+h3 {
+    font-size: 14px;
+    margin: 21px 0 4px 0;
+}
+
+h4 {
+    font-size: 12px;
+    margin: 18px 0 4px 0;
+}
+
+h5 {
+    font-size: 10px;
+    margin: 14px 0 4px 0;
+}
+
+h6 {
+    font-size: 8px;
+    margin: 14px 0 4px 0;
+}
+
+.smallfont {
+    font-size: 10px;
+}
+.descfont {
+    color: #666;
+    font-size: 10px;
+}
+.smallerfont {
+    font-size: 9px;
+}
+.smalltext {
+    color: #666;
+    font-size: 12px;
+}
+.smalltext a {
+    color: #666;
+}
+.greyText
+{
+    color: #666;
+}
+.smalltext-blue {
+    font-size: 8pt;
+    color: #3c78b5;
+}
+.surtitle {
+    margin-left: 1px;
+    margin-bottom: 5px;
+    font-size: 14px;
+    color: #666;
+}
+
+/* css hack found here:  http://www.fo3nix.pwp.blueyonder.co.uk/tutorials/css/hacks/ */
+div.padded {
+    padding: 4px;
+}
+
+div.thickPadded {
+    padding: 10px;
+}
+
+h3.macrolibrariestitle {
+    margin: 0;
+}
+
+div.centered {
+    text-align: center;
+    margin: 10px;
+}
+
+div.centered table {
+    margin: 0 auto;
+    text-align: left;
+}
+
+.tableview table {
+    margin: 0;
+}
+
+.tableview tr.alternateRow {
+    background: #f0f0f0;
+}
+
+.tableview th {
+    text-align: left;
+    font-size: 12px;
+    padding: 5px 0 0 5px;
+    border-bottom-width: 2px;
+    border-bottom-style: solid;
+}
+.tableview td {
+    text-align: left;
+    border-color: #ccc;
+    border-width: 0 0 1px 0;
+    border-style: solid;
+    margin: 0;
+    padding: 4px 10px 4px 5px;
+}
+
+.grid {
+    margin: 2px 0 5px 0;
+    border-collapse: collapse;
+}
+.grid th  {
+    border: 1px solid #ccc;
+    padding: 2px 4px 2px 4px;
+    background: #f0f0f0;
+    text-align: center;
+}
+.grid td  {
+    border: 1px solid #ccc;
+    padding: 3px 4px 3px 4px;
+}
+.gridHover {
+    background-color: #f9f9f9;
+}
+
+td.infocell {
+    background-color: #f0f0f0;
+}
+
+.label,
+label {
+    font-weight: bold;
+}
+a.label {
+    font-weight: normal;
+}
+
+.error {
+    background-color: #fcc;
+}
+
+.errorBox {
+    background-color: #fcc;
+    border: 1px solid #c00;
+    padding: 5px;
+    margin: 5px;
+}
+
+.errorMessage {
+    color: #c00;
+}
+
+.success {
+    background-color: #dfd;
+}
+
+.successBox {
+    background-color: #dfd;
+    border: 1px solid #090;
+    padding: 5px;
+    margin-top:5px;
+    margin-bottom:5px;
+}
+
+blockquote {
+    font-style: italic;
+    font-size: 10pt;
+    border-left-width: 1px;
+    border-left-style: solid;
+    padding: 0 20px;
+    margin: 10px 20px;
+}
+
+blockquote p {
+    font-size: 10pt;
+}
+
+blockquote em {
+    font-style: normal;
+}
+
+table.admin
+{
+    margin: 5px;
+    border-collapse: collapse;
+    width: 100%;
+}
+table.admin td, table.admin th
+{
+    width: 50%;
+    border: 1px solid #ccc;
+    padding: 5px;
+    vertical-align: top;
+}
+table.admin th
+{
+    background-color: #f0f0f0;
+    text-align: right;
+    font-weight: bold;
+}
+table.admin td.controls
+{
+    text-align: center;
+}
+
+div.small {
+    font-size: 9px;
+}
+
+h1.pagename {
+    margin-top: 0;
+}
+
+.loginform {
+    margin: 5px;
+    border: 1px solid #ccc;
+}
+
+/* The text how the "This is a preview" comment should be shown. */
+.previewnote {
+    text-align: center;
+    font-size: 11px;
+    color: red;
+}
+
+/* How the preview content should be shown */
+.previewcontent {
+    background: #e0e0e0;
+}
+
+/* How the system messages should be shown (DisplayMessage.jsp) */
+.messagecontent {
+    background: #e0e0e0;
+}
+
+/* How the "This page has been modified..." -comment should be shown. */
+.conflictnote { }
+
+.createlink,
+a.createlink,
+a.createlink:link,
+a.createlink:visited,
+a.createlink:active,
+a.createlink:hover {
+    color: maroon;
+}
+.templateparameter {
+    font-size: 9px;
+    color: #00008b;
+}
+
+.greybackground {
+    background: #f0f0f0
+}
+
+.greybox {
+    border: 1px solid #ddd;
+    padding: 3px;
+    margin: 1px 1px 10px 1px;
+}
+
+.borderedGreyBox {
+    border: 1px solid #ccc;
+    background-color: #f0f0f0;
+    padding: 10px;
+}
+
+.greyboxfilled {
+    border: 1px solid #ddd;
+    background: #f0f0f0;
+    padding: 3px;
+    margin: 1px 1px 10px 1px;
+}
+
+.lightGreyBox {
+    background: #fafafa;
+}
+
+.rowNormal {
+    background-color: #fff;
+ }
+
+.rowAlternate {
+    background-color: #f7f7f7;
+}
+
+/* used in the list attachments table */
+.rowAlternateNoBottomColor {
+    background-color: #f7f7f7;
+}
+
+.rowAlternateNoBottomColor td,
+.rowAlternateNoBottomNoColor td {
+    border-bottom: 0;
+}
+
+.rowHighlight {
+    background-color: #f0f0f0;
+}
+
+td.greenBar,
+td.greenbar,
+td.graybar,
+td.redbar,
+td.darkredbar {
+    font-size: 1em;
+    border: 1px solid #9c9c9c;
+    padding: 0;
+}
+
+td.greenBar,
+td.greenbar {
+    background: #00df00;
+}
+td.graybar {
+    background: #808080;
+}
+td.redbar {
+    background: #df0000;
+}
+td.darkredbar {
+    background: #af0000;
+}
+
+tr.testpassed {
+    font-size: 2px;
+    background: #dfd;
+    padding: 0;
+}
+tr.testfailed {
+    font-size: 2px;
+    background: #fdd;
+    padding: 0;
+}
+
+td.noformatting {
+    border-width: 0;
+    border-style: none;
+    text-align: center;
+    padding: 0;
+}
+
+/*
+ * The shadow at the bottom of the page between the main content and the
+ * "powered by" section.
+ */
+.bottomshadow {
+    height: 12px;
+    background-image: url(border_bottom.gif);
+    background-repeat: repeat-x;
+}
+
+/*
+ * Styling of the operations box
+ */
+.navmenu .operations li, .navmenu .operations ul {
+    list-style: none;
+    margin-left: 0;
+    padding-left: 0;
+}
+
+.navmenu .operations ul {
+    margin-bottom: 9px;
+}
+
+.navmenu .label {
+    font-weight: inherit;
+}
+
+/*
+ * Styling of ops as a toolbar
+ */
+.toolbar div {
+    display: none;
+}
+
+.toolbar .label {
+    display: none;
+}
+
+.toolbar .operations {
+    display: block;
+}
+
+.toolbar .operations ul {
+    display: inline;
+    list-style: none;
+    margin-left: 10px;
+    padding-left: 0;
+}
+
+.toolbar .operations li {
+    list-style: none;
+    display: inline;
+}
+
+.bold {
+    font-weight: bold;
+}
+
+
+/* space action links */
+.tabnav .spaceActionLinks {
+    float: right;
+    margin: 0;
+    display: block;
+}
+
+.tabnav .spaceActionLinks a span {
+    text-decoration: underline;
+}
+.tabnav .spaceActionLinks a.current {
+    color: black;
+}
+.tabnav .spaceActionLinks a.current span {
+    text-decoration: none;
+}
+
+.tabnav .spaceActionLinks a.current:link {
+    color: black;
+}
+
+.tabnav .spaceActionLinks a.current:visited {
+    color: black;
+}
+
+/* non tabs */
+.tabnav .nontabs {
+    padding: 0;
+    margin: 5px 0 0 3px;
+    display: block;
+    float: left;
+}
+
+/* editor tab customizations of the tabnav */
+#markupTab, #wysiwygTab, #previewTab {
+    font-size: 9pt;
+    padding: 3px 5px 2px; /* tab padding */
+    margin: 8px 0 0 3px; /* margin-top is used to 'push' the tab down to fill in any gaps */
+    font-weight: normal;
+}
+
+/* alphabet list */
+#squaretab {
+    margin-left: 0;
+    padding-left: 0;
+    white-space: nowrap;
+    font-family: Verdana, Helvetica, Arial, sans-serif;
+    font-size: 8pt;
+    line-height: 11pt
+}
+
+#squaretab li {
+    display: inline;
+    list-style-type: none;
+}
+
+#squaretab a {
+    padding: 5px 7px 3px 7px;
+    border-width: 1px;
+    border-style: solid;
+}
+
+#squaretab a:link,
+#squaretab a:visited {
+    color: #fff;
+    text-decoration: none;
+}
+
+#squaretab a:hover {
+    text-decoration: none;
+}
+
+#current {
+    background: #fff;
+    color: #000;
+}
+
+.headerFloat {
+    margin-left: auto;
+    width: 50%;
+}
+
+.headerFloatLeft {
+    float: left;
+    margin-right: 20px;
+    margin-bottom: 10px;
+}
+
+#headerRow {
+    padding: 10px;
+}
+
+.greyFormBox {
+    border: 1px solid #ccc;
+    padding: 5px;
+}
+
+.openPageHighlight {
+    background-color: #ffc;
+    padding: 2px;
+    border: 1px solid #ddd;
+}
+
+.editPageInsertLinks, .editPageInsertLinks a {
+    color: #666;
+    font-weight: bold;
+    font-size: 10px;
+}
+
+/* Style for label heatmap. */
+.top10 a {
+    font-weight: bold;
+    font-size: 2em;
+    color: #036;
+}
+.top25 a {
+    font-weight: bold;
+    font-size: 1.6em;
+    color: #036;
+}
+.top50 a {
+    font-size: 1.4em;
+    color: #036;
+}
+.top100 a {
+    font-size: 1.2em;
+    color: #036;
+}
+
+.heatmap {
+    list-style: none;
+    width: 95%;
+    margin: 0 auto;
+}
+
+.heatmap a {
+    text-decoration: none;
+}
+
+.heatmap a:hover {
+    text-decoration: underline;
+}
+
+.heatmap li {
+    display: inline;
+}
+
+.minitab {
+    padding: 5px;
+    margin: 1px 0 0 0;
+    border-bottom-width: 1px;
+    border-bottom-style: solid;
+    text-decoration: none;
+    float: none;
+}
+
+.minitab a {
+    padding: 5px 5px;
+    margin-left: 3px;
+    margin-top: 1px;
+    border-top: 1px solid;
+    border-right: 1px solid;
+    border-left: 1px solid;
+}
+
+#makeRichTextDefault, #makeMarkupDefault {
+    border: 0;
+    font-weight: normal;
+    text-decoration: none;
+}
+
+.minitab .selected {
+    background: white;
+    border-bottom: 1px solid white;
+    color: #000;
+    text-decoration: none;
+}
+.minitab .unselected {
+    border-bottom-width: 1px;
+    border-bottom-style: solid;
+    color: #fff;
+    text-decoration: none;
+}
+
+.minitab a.unselected:link,
+.minitab a.unselected:visited {
+    color: white;
+}
+.minitab a.selected:link,
+.minitab a.selected:visited {
+    color: black;
+}
+
+.minitabFont {
+    font-size: 9pt;
+    line-height: 9pt;
+}
+
+.linkerror {
+    background-color: #fcc;
+}
+
+a.labelOperationLink:link,
+a.labelOperationLink:active,
+a.labelOperationLink:visited,
+a.labelOperationLink:hover {
+    text-decoration: underline;
+}
+
+a.newLabel:link,
+a.newLabel:active,
+a.newLabel:visited,
+a.newLabel:hover {
+    background-color: #dfd;
+}
+
+ul.square {
+    list-style-type: square;
+}
+
+.status-red {
+    color: #800;
+    font-weight: bold;
+}
+.status-green {
+    color: #080;
+    font-weight: bold;
+}
+
+.person {
+    background-color: white;
+    width: 200px;
+    float: left;
+}
+.person td {
+    white-space: nowrap;
+}
+input.alignedCheckbox {
+    margin: 0;
+}
+
+div.spacer {
+    clear: both;
+}
+
+span.left {
+    float: left;
+    text-align: left;
+}
+
+span.right {
+    float: right;
+    text-align: right;
+}
+
+.nobr {
+    white-space: nowrap;
+}
+
+label.normal {
+    font-weight: normal;
+    color: black
+}
+
+div.leftFloatMargined {
+    float: left;
+    margin-right: 2px
+}
+
+#entitySearchResults {
+    border-collapse: collapse;
+    background-color: #fafafa;
+    text-align: left;
+    width: 100%;
+}
+
+#entitySearchResults td {
+    border-top: 1px solid #ccc;
+    padding: 3px;
+    background-color: white;
+    vertical-align: top;
+}
+
+#entitySearchResults th {
+    color: #666;
+    padding: 3px;
+    white-space:nowrap;
+}
+
+#entitySearchResults .firstColumn {
+    width: 2%;
+    text-align: right;
+}
+
+#entitySearchResults .secondColumn {
+    width: 1px;
+    text-align: right;
+}
+
+a.paddedGreyDisabled {
+    background-color: #f0f0f0;
+    padding: 4px;
+    text-decoration: none;
+    color: #666;
+}
+
+a.grey {
+    color: #666;
+}
+
+div.topBottomMargin {
+    margin: 10px 0 10px 0
+}
+
+div.bottomMargin {
+    margin-bottom: 10px
+}
+
+table.spaceList {
+    border-collapse: collapse;
+}
+
+tr.spaceList td {
+    padding: 5px 0 5px 5px;
+    border-bottom: 1px solid #ccc;
+    vertical-align: top;
+}
+
+.spaceList .spaceDescription {
+    margin-top: 3px;
+    color: #666;
+}
+
+tr.spaceList .operations {
+    vertical-align: top;
+    padding-right: 5px;
+}
+
+.fontSizeBigger {
+    font-size: 11pt;
+    line-height: 14pt;
+}
+
+.fontSizeDefault {
+    line-height: 1.3em;
+}
+
+.fontSizeSmaller {
+    font-size: 10pt;
+    line-height: 13pt;
+}
+
+/* deprecated. TODO - check for use in themes and remove. */
+.fontSizeTiny {
+    font-family: Verdana, Helvetica, Arial, sans-serif;
+    font-size: 8pt;
+    line-height: 11pt;
+}
+
+table.dashboard td.left {
+    padding-right: 16px;
+}
+
+.clearBoth {
+    clear: both;
+}
+
+#labelInputSpan {
+    margin-top: 1px;
+}
+
+form#quickSearch {
+    margin: 2px;
+    padding: 0;
+}
+
+form#quickSearch input {
+    font-size: 10pt;
+    vertical-align: middle;
+}
+
+table.fullWidthBorderless
+{
+    width: 100%;
+    border: 0;
+    border-collapse: collapse;
+}
+
+/* Hacks for YUI menustuff */
+
+#pageMenusMenuBar {
+   padding: 4px;
+}
+
+#notificationFormat {
+    padding: 0;
+    margin: -9px 15px;
+}
+
+#notificationFormat h4 {
+    font-weight: normal;
+}
+
+#notificationFormat h2 {
+    font-weight: normal;
+}
+
+#rssFormat {
+    padding: 0;
+    margin: 6px 15px;
+}
+
+.notificationGreySide {
+    border-top: 1px solid #ddd;
+    border-bottom: 1px solid #ddd;
+    margin: 0 0 5px 0;
+    padding: 3px 17px;
+}
+
+.notificationDigest {
+    padding: 0 17px;
+}
+
+.darkBlue {
+    color: #036;
+}
+
+.grey {
+    color: #666;
+}
+
+#contentOptions {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+#exportContentTree {
+    list-style-type: none;
+    margin: 5px 0;
+}
+
+#contentOptionAllNote {
+    color: #666;
+    font-weight: normal;
+}
+
+.hidden,
+li.hidden {
+    display: none;
+    visibility: hidden;
+}
+#main {
+    text-align: left;
+    background-color: #fff;
+}
+#header {
+    min-height: 1.8em;
+    line-height: 1.8;
+    margin: 0;
+    padding: 0;
+}
+
+a img {
+    border: none;
+}
+
+a.texticon {
+    min-height: 16px;
+    text-align: left;
+    padding:0 10px 0 20px;
+    background-position: 0 50%;
+    outline:0 none;
+}
+
+
+table {
+    clear: left;
+}
+
+
+/* End Confluence master stylesheet */
+
+
+
+
+/* FROM: /s/1517/27/1.0/_/download/resources/confluence.web.resources%3Amaster-styles/wiki-content.css */
+
+.wiki-content,
+.wiki-content p,
+.wiki-content table,
+.wiki-content tr,
+.wiki-content td,
+.wiki-content th,
+.wiki-content ol,
+.wiki-content ul,
+.wiki-content li {
+    font-size: 10pt;
+    line-height: 13pt;
+}
+
+.wiki-content p {
+    margin: 10px 0;
+    padding: 0;
+}
+
+.wiki-content li,
+.wiki-content ul p,
+.wiki-content ol p {
+    margin: 0;
+    padding: 0;
+}
+
+.wiki-content ul {
+    list-style-type: disc;
+}
+
+.wiki-content ol,
+.wiki-content ol ol ol ol,
+.wiki-content ol ol ol ol ol ol ol,
+.wiki-content ol ol ol ol ol ol ol ol ol ol {
+    list-style-type: decimal;
+}
+
+.wiki-content ol ol,
+.wiki-content ol ol ol ol ol,
+.wiki-content ol ol ol ol ol ol ol ol,
+.wiki-content ol ol ol ol ol ol ol ol ol ol ol {
+    list-style-type: lower-alpha;
+}
+
+.wiki-content ol ol ol,
+.wiki-content ol ol ol ol ol ol,
+.wiki-content ol ol ol ol ol ol ol ol ol,
+.wiki-content ol ol ol ol ol ol ol ol ol ol ol ol {
+    list-style-type: lower-roman;
+}
+
+/*Needs the id selector because of the
+'#com-atlassian-confluence h1' entry in master.css*/
+#com-atlassian-confluence .wiki-content h1,
+.wiki-content h2,
+.wiki-content h3,
+.wiki-content h4,
+.wiki-content h5,
+.wiki-content h6 {
+    font-weight: bold;
+    line-height: normal;
+    padding: 0;
+}
+
+#com-atlassian-confluence .wiki-content h1
+{
+    font-size: 18pt;
+    margin-top: 32px;
+}
+
+.wiki-content h2 {
+    font-size: 16pt;
+    margin-top: 24px;
+}
+
+.wiki-content h3 {
+    font-size: 14pt;
+    margin-top: 20px;
+}
+
+.wiki-content h4 {
+    font-size: 12pt;
+    margin-top: 14px;
+}
+
+.wiki-content h5 {
+    font-size: 11pt;
+    margin-top: 12px;
+}
+
+.wiki-content h6 {
+    font-size: 10pt;
+    color: black;
+    margin-top: 8px;
+}
+
+.wiki-content .confluenceTable, .grid {
+    margin-left: 0px;
+    margin-right: 0;
+    margin-top: 10px;
+    margin-bottom: 10px;
+    padding: 0;
+}
+
+.wiki-content td.confluenceTd {
+    padding-right: 10px;
+}
+.wiki-content td.confluenceTd,
+.wiki-content th.confluenceTh {
+    margin: 0;
+    padding: 0;
+}
+.wiki-content-preview {
+    padding: 5px;
+    border-left: 1px solid;
+    border-right: 1px solid;
+}
+
+
+/* FROM: /s/1517/27/1.0/_/download/resources/confluence.web.resources%3Amaster-styles/tables.css */
+
+table.confluenceTable {
+    margin: 5px;
+    border-collapse: collapse;
+}
+
+td.confluenceTd, table.confluenceTable td.confluenceTd {
+    border-width: 1px;
+    border-style: solid;
+    border-color: #ccc;
+    padding: 5px;
+    vertical-align: top;
+}
+
+th.confluenceTh, table.confluenceTable th.confluenceTh {
+    border-width: 1px;
+    border-style: solid;
+    border-color: #ccc;
+    padding: 5px;
+    background-color: #f0f0f0;
+    text-align: left;
+    vertical-align: top;
+}
+
+
+/* FROM: /s/1517/27/1.0/_/download/resources/confluence.web.resources%3Amaster-styles/panels.css */
+
+.panel {
+    color: black;
+    padding: 0;
+    margin: 10px 20px;
+    background: #f0f0f0;
+    border-width: 1px;
+    border-style: solid;
+    overflow: hidden;
+}
+
+.alertPanel {
+    border-color: #c00;
+}
+
+.infoPanel {
+    border-color: #3c78b5;
+}
+
+.alertPanel, .infoPanel {
+    border-style: solid;
+    border-width: 1px;
+    padding: 8px;
+    margin: 10px;
+}
+
+.infopanel-heading {
+    font-weight: bold;
+	padding: 4px 0 2px 0;
+}
+
+/* basic panel (basicpanel.vmd) style */
+.basicPanelContainer {
+    border-width: 1px;
+    border-style: solid;
+    margin-top: 2px;
+    margin-bottom: 8px;
+    width: 100%;
+}
+
+.basicPanelTitle {
+    padding: 5px;
+    margin: 0;
+    background-color: #f0f0f0;
+    color: black;
+    font-weight: bold;
+}
+
+.basicPanelBody {
+    padding: 5px;
+    margin: 0;
+}
+
+.panelHeader {
+    padding: 0 12px;
+    line-height: 2; /* vertical alignment for title */
+    text-align: center;
+    border-bottom-width: 1px;
+    border-bottom-style: solid;
+}
+
+.codeHeader, .panelHeader, .panelContent {
+    background: #f0f0f0;
+}
+
+.preformattedHeader, .codeContent, .preformattedContent {
+    background: #fff;
+}
+
+.panelContent {
+    color: #000;
+    margin: 0;
+    padding: 0 12px;
+    text-align: left;
+    font-size: .95em;
+}
+
+.panelContent,
+.panelContent p, .panelContent th,
+.panelContent td, .panelContent li {
+    text-align: left;
+}
+
+
+
+/* FROM: /s/1517/27/1.0/_/download/resources/confluence.web.resources%3Amaster-styles/renderer-macros.css */
+
+/*
+    Styles for macros bundled in Renderer.
+*/
+
+.panelMacro {
+    margin: 10px 20px;
+    overflow: hidden; /* fix width next to floated content */
+}
+
+.panelMacro table {
+    text-align: left;
+    padding: 0 20px;
+    width: 100%;
+}
+
+.panelMacro td, .panelMacro p {
+    font-size: 1em;
+    padding: 14px 0;
+}
+
+
+/* Code styles */
+.code {
+    border-width: 1px;
+    border-style: dashed;
+    overflow: auto;
+}
+
+.code, .preformatted {
+    background-color: #fff;
+}
+
+.code pre, .preformatted pre { /* needs 'pre' to override TinyMCE style */
+    font-family:"Courier New", Courier, monospace;
+    line-height: 1.3;
+}
+
+.code-keyword {
+  color: #000091;
+  background-color: inherit;
+}
+
+.code-object {
+  color: #910091;
+  background-color: inherit;
+}
+
+.code-quote {
+  color: #009100;
+  background-color: inherit;
+}
+
+.code-comment {
+  color: #808080;
+  background-color: inherit;
+}
+
+.code-xml .code-keyword {
+  color: inherit;
+  font-weight: bold;
+}
+
+.code-tag {
+  color: #000091;
+  background-color: inherit;
+}
+
+
+/* FROM: /s/1517/27/1.0/_/download/resources/confluence.web.resources%3Amaster-styles/information-macros.css */
+
+/* Information plugin styles */
+
+.noteMessage, .warningMessage, .infoMessage, .tipMessage {
+    border-style: solid;
+    border-width: 1px;
+    text-align: center;
+    padding: 5px;
+    overflow: hidden; /* fix width next to floated content */
+}
+
+.noteMessage {
+    border-color: #f0c000;
+    background: #ffffce;
+}
+
+.warningMessage {
+    border-color: #c00;
+    background: #fcc;
+}
+
+.infoMessage {
+    border-color: #3c78b5;
+    background: #d8e4f1;
+}
+
+.tipMessage {
+    border-color: #090;
+    background-color: #dfd;
+}
+
+table.infoMacro td, table.warningMacro td, table.tipMacro td, table.noteMacro td {
+    border: none;
+}
+
+.informationMacroPadding {
+    padding: 5px 0 0 5px;
+}
+
+.noteMacro, .warningPanel {
+    background-color: #ffffce;
+}
+#addition .noteMacro {
+    border-style: solid;
+    border-width: 1px;
+    border-color: #f0c000;
+    background-color: #ffffce;
+    text-align:left;
+    padding: 10px;
+    width: 100%;
+    margin: 5px 20px;
+}
+
+#addition .noteMacro td {
+    font-size: 10pt;
+    padding: 2px;
+    padding-right: 15px;
+}
+
+#addition .noteMacro p {
+    font-size: 10pt;
+}
+
+#addition .noteMacro b {
+    font-size: 10pt;
+}
+
+#addition table.noteMacro td {
+    border: none;
+}
+
+#replying .noteMacro {
+    border-style: solid;
+    border-width: 1px;
+    border-color: #f0c000;
+    background-color: #ffffce;
+    text-align:left;
+    padding: 10px;
+    width: 100%;
+    margin: 5px 20px;
+}
+
+#replying .noteMacro td {
+    font-size: 10pt;
+    padding: 2px;
+    padding-right: 15px;
+}
+
+#replying .noteMacro p {
+    font-size: 10pt;
+}
+
+#replying .noteMacro b {
+    font-size: 10pt;
+}
+
+#replying table.noteMacro td {
+    border: none;
+}
+
+.tipMacro {
+    background-color: #dfd;
+}
+
+.warningMacro {
+    background-color: #fcc;
+}
+
+.infoMacro {
+    background-color: #d8e4f1;
+}
+
+.warningPanel {
+    border-style: solid;
+    border-width: 1px;
+    padding: 8px;
+    margin: 10px;
+}
+
+.warningPanel {
+    border-color: #f0c000;
+}
+
+
+
+
+
+/* FROM: /s/1517/27/27/_/styles/combined.css */
+
+
+/*
+    Colors for Confluence (included for all themes by default).
+*/
+
+
+h1, h2, h3, h4, h5, h6,
+.wiki-content h1,
+.wiki-content h2,
+.wiki-content h3,
+.wiki-content h4,
+.wiki-content h5,
+.wiki-content h6,
+.steptitle,
+.substeptitle,
+.formtitle,
+a.blogHeading,
+.more-comments a,
+.label,
+label,
+th.confluenceTh,
+table.confluenceTable th.confluenceTh,
+table.admin th,
+.form-element-large,
+.form-element-small,
+#com-atlassian-confluence .mce_h1 span.mceText,
+#com-atlassian-confluence .mce_h2 span.mceText,
+#com-atlassian-confluence .mce_h3 span.mceText,
+#com-atlassian-confluence .mce_h4 span.mceText,
+#com-atlassian-confluence .mce_h5 span.mceText,
+#com-atlassian-confluence .mce_h6 span.mceText {
+    color: #003366;
+}
+
+.wiki-content h1,
+.wiki-content h2 {
+ 	border-bottom-color: #3c78b5;
+}
+
+.wiki-content-preview {
+    border-left-color: #3c78b5;
+    border-right-color: #3c78b5;
+}
+
+.pageSectionHeader {
+    border-bottom-color: #3c78b5;
+}
+
+.panel {
+    border-color: #3c78b5;
+}
+
+.panelHeader,
+.menuheading,
+.pageheader,
+.sectionbottom {
+    border-bottom-color: #3c78b5;
+}
+
+.topRow {
+    border-top-color: #3c78b5;
+}
+
+.tabletitle, .pageSectionHeader, .section-header h2 {
+    color: #003366;
+}
+.tabletitle, .pageSectionHeader {
+	border-bottom-color: #3c78b5;
+}
+
+a:link,
+a:visited,
+a:active,
+a:hover,
+#default-labels-header a.add {
+	color: #003366;
+}
+
+h1 a:hover {
+    border-bottom-color: #003366;
+}
+
+/* End colour styles for Confluence */
+
+
+
+
+
+
+
+
+
+
+
+/* -------------------------------------------------------------------- */
+
+
+
+body {
+    /* Page-level left and right padding. Internal content that needs to be full-width should use 'margin: 0 -10px'. */
+    margin: 0;
+    border-left: solid #fff 10px;
+    border-right: solid #fff 10px;
+    font-family: Helvetica, Arial, sans-serif;
+    position: relative;
+}
+

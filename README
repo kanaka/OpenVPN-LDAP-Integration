@@ -12,8 +12,22 @@ For more information about OpenVPN see:
 
 
 
-
 *** Prepare Windows client package data ***
+
+    The program on Linux that creates the Windows installer is
+    makensis (part of the nsis package). This program reads in
+    a package definition file and then generates the installer based
+    on that definition file.
+
+    The actual files that are installed by the installer are made up
+    of two parts: the openvpn program itself, and the openvpn GUI
+    component that provides a task tray icon for easy connecting and
+    disconnecting.
+
+
+  - Relevant link:
+
+    http://www.xdevsoftware.com/blog/post/How-to-Install-the-Nullsoft-Installer---NSIS-on-Linux-.aspx
 
   - Install 7zip
 
@@ -78,6 +92,18 @@ For more information about OpenVPN see:
 
 *** Prepare firmware mod-kit and base DD-WRT image ***
 
+    In order to generate DD-WRT firmware images for the Linksys WRT54G
+    wireless router, there are two components that are required. The
+    first is the mod-kit tool used for packing and unpacking
+    a firmware image. The second component is the base firmware image
+    itself.
+
+    When the vpn_client command is used to generate a firmware image,
+    it will use the mod-kit to unpack the base firmware image, add the
+    client cert/key information, and add some additional scripts and
+    settings to the firmware image to make the VPN connection
+    establish correctly when the router is plugged in.
+
   - Relevant links:
 
     http://www.dd-wrt.com/wiki/index.php/Development
@@ -99,6 +125,9 @@ For more information about OpenVPN see:
 
 
 *** Recovering from bad firmware flash ***
+
+      If you (apparently) brick your router, it may still be possible
+      to recover it by following the instructions below.
 
     - Relevant link:
 

@@ -1,0 +1,490 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+
+
+            <title>OpenVPN HOWTOs</title>
+            
+<!-- include system resources -->
+<link type="text/css" rel="stylesheet" href="files/confluence.css" title="Confluence Master Stylesheet" media="all">
+<link type="text/css" rel="stylesheet" href="files/print.css" media="print">
+<!-- end system resources -->
+
+
+
+</head><body onload="placeFocus()" id="com-atlassian-confluence">
+
+
+
+<div id="main">
+    <h1 id="title-heading" class="pagetitle">
+		<span id="title-text">OpenVPN HOWTOs </span>
+    </h1>
+
+
+
+        <div class="wiki-content">
+           <!-- wiki content -->
+            <p>For a graphical step by step walkthrough of how the OpenVPN system works see <a href="walkthrough.html" title="OpenVPN Walkthrough">OpenVPN Walkthrough</a>.<br>
+For detailed explanation of how the OpenVPN system is setup and configure see <a href="config.html" title="OpenVPN Configuration">OpenVPN Configuration</a>.</p>
+
+<h1><a name="OpenVPNHOWTOs-OpenVPNHOWTOs"></a>OpenVPN HOWTOs</h1>
+
+<style type="text/css">/*<![CDATA[*/
+div.rbtoc1249663825108 {margin-left: 1.5em;padding: 0px;}
+div.rbtoc1249663825108 ul {list-style: disc;margin-left: 0px;}
+div.rbtoc1249663825108 li {margin-left: 0px;padding-left: 0px;}
+
+/*]]>*/</style><div class="rbtoc1249663825108">
+<ul>
+    <li><a href="#OpenVPNHOWTOs-OpenVPNHOWTOs">OpenVPN HOWTOs</a></li>
+<ul>
+    <li><a href="#OpenVPNHOWTOs-Cheatsheetforcommontasks">Cheat sheet for common tasks</a></li>
+    <li><a href="#OpenVPNHOWTOs-Detailedexplanations">Detailed explanations</a></li>
+<ul>
+    <li><a href="#OpenVPNHOWTOs-Detailedusagehelp">Detailed usage help</a></li>
+    <li><a href="#OpenVPNHOWTOs-Newcertificateandinstaller">New certificate and installer</a></li>
+    <li><a href="#OpenVPNHOWTOs-Revokecertificate">Revoke certificate</a></li>
+    <li><a href="#OpenVPNHOWTOs-Showcertificatestatusofallusers">Show certificate status of all users</a></li>
+    <li><a href="#OpenVPNHOWTOs-Showcurrentusers">Show current users</a></li>
+    <li><a href="#OpenVPNHOWTOs-Showuseraccesslog">Show user access log</a></li>
+    <li><a href="#OpenVPNHOWTOs-Createanewaccesspolicy">Create a new access policy</a></li>
+</ul>
+</ul>
+</ul></div>
+
+
+<h2><a name="OpenVPNHOWTOs-Cheatsheetforcommontasks"></a>Cheat sheet for common tasks</h2>
+
+<p><b><tt>vpn_client</tt></b> is run from the <b>'client'</b> sub-directory of the <b>vpn</b> user on <b>ca.example.com</b>.</p>
+
+<p>Click the title for more detailed explanations.</p>
+
+<table class="confluenceTable"><tbody>
+<tr>
+<th class="confluenceTh">Task                         </th>
+<th class="confluenceTh"> Subtask       </th>
+<th class="confluenceTh"> Command to run                   </th>
+<th class="confluenceTh"> Output location </th>
+</tr>
+<tr>
+<th class="confluenceTh"><a href="#OpenVPNHOWTOs-help">Detailed help</a>        </th>
+<td class="confluenceTd">&nbsp;</td>
+<td class="confluenceTd"> ./vpn_client --help               </td>
+<td class="confluenceTd"> Screen </td>
+</tr>
+<tr>
+<th class="confluenceTh"><a href="#OpenVPNHOWTOs-new">New cert/installer</a>    </th>
+<td class="confluenceTd">Default password</td>
+<td class="confluenceTd"> ./vpn_client new <font color="red">&lt;username&gt; &lt;email&gt;</font> </td>
+<td class="confluenceTd"> <b>client/keys</b> and <b>client/packages</b> </td>
+</tr>
+<tr>
+<th class="confluenceTh">&nbsp;</th>
+<td class="confluenceTd">Specify password</td>
+<td class="confluenceTd"> ./vpn_client new --password <font color="green">&lt;PASS&gt;</font> <font color="red">&lt;username&gt; &lt;email&gt;</font> </td>
+<td class="confluenceTd"> <b>client/keys</b> and <b>client/packages</b> </td>
+</tr>
+<tr>
+<th class="confluenceTh"><a href="#OpenVPNHOWTOs-revoke">Revoke certificate</a> </th>
+<td class="confluenceTd">&nbsp;</td>
+<td class="confluenceTd"> ./vpn_client revoke <font color="red">&lt;username&gt;</font> </td>
+<td class="confluenceTd"> <b>client/keys</b> </td>
+</tr>
+<tr>
+<th class="confluenceTh"><a href="#OpenVPNHOWTOs-certs">Show certificates</a>   </th>
+<td class="confluenceTd"> All Users      </td>
+<td class="confluenceTd"> ./vpn_client show-cert            </td>
+<td class="confluenceTd"> Screen </td>
+</tr>
+<tr>
+<th class="confluenceTh">&nbsp;</th>
+<td class="confluenceTd"> One User       </td>
+<td class="confluenceTd"> ./vpn_client show-cert <font color="red">&lt;username&gt;</font> </td>
+<td class="confluenceTd"> Screen </td>
+</tr>
+<tr>
+<th class="confluenceTh">&nbsp;</th>
+<td class="confluenceTd"> CSV to screen  </td>
+<td class="confluenceTd"> ./vpn_client show-cert --csv      </td>
+<td class="confluenceTd"> Screen </td>
+</tr>
+<tr>
+<th class="confluenceTh">&nbsp;</th>
+<td class="confluenceTd"> CSV to file    </td>
+<td class="confluenceTd"> ./vpn_client show-cert --csv &gt; packages/certs.csv </td>
+<td class="confluenceTd"> <b>client/packages</b> </td>
+</tr>
+<tr>
+<th class="confluenceTh"><a href="#OpenVPNHOWTOs-active">Show active users</a>  </th>
+<td class="confluenceTd">&nbsp;</td>
+<td class="confluenceTd"> ./vpn_client show-active          </td>
+<td class="confluenceTd"> Screen </td>
+</tr>
+<tr>
+<th class="confluenceTh"><a href="#OpenVPNHOWTOs-access">Show access log</a>    </th>
+<td class="confluenceTd"> Past 1-2 weeks </td>
+<td class="confluenceTd"> ./vpn_client show-access          </td>
+<td class="confluenceTd"> Screen </td>
+</tr>
+<tr>
+<th class="confluenceTh">&nbsp;</th>
+<td class="confluenceTd"> All logs       </td>
+<td class="confluenceTd"> ./vpn_client show-access --all    </td>
+<td class="confluenceTd"> Screen </td>
+</tr>
+<tr>
+<th class="confluenceTh">&nbsp;</th>
+<td class="confluenceTd"> CSV to screen  </td>
+<td class="confluenceTd"> ./vpn_client show-access --csv    </td>
+<td class="confluenceTd"> Screen </td>
+</tr>
+<tr>
+<th class="confluenceTh">&nbsp;</th>
+<td class="confluenceTd"> CSV to file    </td>
+<td class="confluenceTd"> ./vpn_client show-access --csv &gt; packages/log.csv </td>
+<td class="confluenceTd"> <b>client/packages</b> </td>
+</tr>
+<tr>
+<th class="confluenceTh">&nbsp;</th>
+<td class="confluenceTd"> One user       </td>
+<td class="confluenceTd"> ./vpn_client show-access | grep <font color="red">&lt;username&gt;</font> </td>
+<td class="confluenceTd"> Screen </td>
+</tr>
+<tr>
+<th class="confluenceTh">&nbsp;</th>
+<td class="confluenceTd"> For Apr 24th   </td>
+<td class="confluenceTd"> ./vpn_client show-access | grep 'Apr *24 ' </td>
+<td class="confluenceTd"> Screen </td>
+</tr>
+<tr>
+<td class="confluenceTd">&nbsp;</td>
+<td class="confluenceTd">&nbsp;</td>
+<td class="confluenceTd">&nbsp;</td>
+<td class="confluenceTd">&nbsp;</td>
+</tr>
+<tr>
+<th class="confluenceTh"><a href="#OpenVPNHOWTOs-policy">New access policy</a>  </th>
+<td class="confluenceTd">&nbsp;</td>
+<td class="confluenceTd"> See <a href="#OpenVPNHOWTOs-policy">New access policy</a> explanation</td>
+<td class="confluenceTd">&nbsp;</td>
+</tr>
+</tbody></table>
+
+
+
+<h2><a name="OpenVPNHOWTOs-Detailedexplanations"></a>Detailed explanations</h2>
+
+<ul>
+	<li>To run the <b><tt>vpn_client</tt></b> command, ssh (or PuTTY) to <b>ca.example.com</b><br>
+as the <b>vpn</b> user. Then change to the <b>client</b> sub-directory. Several<br>
+of the <b><tt>vpn_client</tt></b> commands have lots of screen output (such as<br>
+<tt>--help</tt>, <tt>--show-cert</tt> and <tt>--show-acesss</tt>). You can send the<br>
+output to a pager program such as <b><tt>less</tt></b> in order to be able to<br>
+scroll back and forth through the output.
+<div class="panel" style="border-width: 1px;"><div class="panelContent">
+<p><tt>cd client</tt><br>
+<tt>./vpn_client --help | less</tt></p>
+</div></div></li>
+</ul>
+
+
+
+<ul>
+	<li>To run commands on OpenVPN servers as the <b>openvpn</b> user, first log<br>
+into <b>ca.example.com</b> as described above and then ssh to the specific<br>
+OpenVPN server as the <b>openvpn</b> user. The <b>openvpn</b> user on each<br>
+OpenVPN server has an authorized_keys file that allows the private key<br>
+for <b>vpn@ca.example.com</b> to log in without a password (in fact you<br>
+cannot log into an OpenVPN server as <b>openvpn</b> with a password).</li>
+</ul>
+
+
+
+<p><a name="OpenVPNHOWTOs-help"></a></p>
+<h3><a name="OpenVPNHOWTOs-Detailedusagehelp"></a>Detailed usage help</h3>
+
+<ul>
+	<li>The <b><tt>vpn_client</tt></b> program contains detailed usage help that can<br>
+be output using the <tt>--help</tt> option:
+<div class="panel" style="border-width: 1px;"><div class="panelContent">
+<p><tt>./vpn_client new <font color="red">&lt;username&gt; &lt;email&gt;</font></tt></p>
+</div></div></li>
+</ul>
+
+
+
+<p><a name="OpenVPNHOWTOs-new"></a></p>
+<h3><a name="OpenVPNHOWTOs-Newcertificateandinstaller"></a>New certificate and installer</h3>
+
+<ul>
+	<li>To create a new user certificate and installer package:
+<div class="panel" style="border-width: 1px;"><div class="panelContent">
+<p><tt>./vpn_client new <font color="red">&lt;username&gt; &lt;email&gt;</font></tt></p>
+</div></div></li>
+	<li>Mail <b>'/home/vpn/packages/openvpn-&lt;username&gt;-installer.zip'</b> to the<br>
+user.</li>
+	<li>The --password <font color="green">&lt;PASS&gt;</font> option can be used to<br>
+override the default passowrd on the certificate file.</li>
+</ul>
+
+
+<p>Once a certificate is created, it is very helpful for future<br>
+maintenance to add a note about it to the file<br>
+<b>'client/packages/client_notes.txt'</b>.
+
+<p>The <b>'client/keys/index.txt'</b> file automatically tracks the basic<br>
+information like username, email and certificate state but it is also<br>
+helpful to log some additional information such as the reason for the<br>
+VPN access, if a non-default password was used, and what version<br>
+Windows client was used, etc.</p>
+
+<p>The <b>vpn_client new</b> command does the following:</p>
+<ul class="alternate" type="square">
+	<li>The user account is checked to make sure that it exists in<br>
+      Active Directory and is a member of a valid VPN group.</li>
+	<li>A new pkcs12 certificate that is signed by the secret root CA<br>
+      (certificate authority) is created for the user (&lt;username&gt;.p12)<br>
+      and &lt;email&gt; encoded in the certificate. The act of signing the<br>
+      package using the root CA is what allows the user to connect to<br>
+      the OpenVPN server. There is no change on the server needed<br>
+      (unlike revoking a client certificate).</li>
+	<li>The client certificate file is encrypted using a password in the<br>
+      form '&lt;year&gt;_&lt;username&gt;'.</li>
+	<li>The pkcs12 certificate is copied into the configuration<br>
+      directory of the unpacked openvpn package and renamed<br>
+      'client.p12'.</li>
+	<li>The shared static key 'ta.key' is copied into the config<br>
+      directory.</li>
+	<li>The client openvpn config file 'client.ovpn' copied into the<br>
+      openvpn package config directory.</li>
+	<li>The makensis command is used to package up an installer for the<br>
+      openvpn client that is then zipped to enable sending via email<br>
+      systems that reject *.exe attachments.</li>
+</ul>
+
+
+<p>In the <b>'client/packages'</b> subdirectory of the vpn user's home<br>
+directory are now two files named <b>'openvpn-&lt;username&gt;-installer.exe'</b><br>
+and <b>'openvpn-&lt;username&gt;-installer.zip'</b>.
+
+<p><a name="OpenVPNHOWTOs-revoke"></a></p>
+<h3><a name="OpenVPNHOWTOs-Revokecertificate"></a>Revoke certificate</h3>
+
+<ul>
+	<li>To revoke the certificate for a user:
+<div class="panel" style="border-width: 1px;"><div class="panelContent">
+<p><tt>./vpn_client revoke <font color="red">&lt;username&gt;</font></tt></p>
+</div></div></li>
+</ul>
+
+
+<p>The <b>vpn_client revoke</b> command does the following:</p>
+<ul class="alternate" type="square">
+	<li>Marks the certificate as revoked in the database.</li>
+	<li>Creates an updated Certificate Revocation List file (CRL)<br>
+      'crl.pem'. This is a root CA signed file that contains<br>
+      a list of all revoked certificates.</li>
+	<li>The CRL file is copied to the OpenVPN servers to<br>
+      '/etc/openvpn/crl.pem'.</li>
+	<li>When a new client connection is made to the OpenVPN server, it<br>
+      is configured to check the CRL file. If the client certificate<br>
+      is listed in the CRL file, then the connection will be refused.<br>
+      Note that this only affects new connections and existing<br>
+      connections will not be affected by a change in the CRL file.</li>
+</ul>
+
+
+<p>Note that if the domain account is disabled, or the user is not<br>
+a member of an VPN group, then the connection will also be refused.<br>
+However, the client certificate should still be revoked for these cases:</p>
+<ul>
+	<li>If the user has lost their certificate, then the old certificate<br>
+should be revoked before issuing a new one.</li>
+	<li>If the user no longer requires access to the Dallas network.</li>
+	<li>If the user's certificate may have been compromised, then the old<br>
+certificate should be revoked and a new one should be created.</li>
+</ul>
+
+
+
+<p><a name="OpenVPNHOWTOs-certs"></a></p>
+<h3><a name="OpenVPNHOWTOs-Showcertificatestatusofallusers"></a>Show certificate status of all users</h3>
+
+<ul>
+	<li>To show the list of expired, revoked and valid certificates of all users:
+<div class="panel" style="border-width: 1px;"><div class="panelContent">
+<p><tt>./vpn_client show-cert</tt></p>
+</div></div></li>
+	<li>To show the certificate(s) for a single user:
+<div class="panel" style="border-width: 1px;"><div class="panelContent">
+<p><tt>./vpn_client show-cert <font color="red">&lt;common_name&gt;</font></tt></p>
+</div></div></li>
+</ul>
+
+
+<p>The <b><tt>vpn_client show-cert</tt></b> command reads in the file<br>
+<b>'keys/index.txt'</b> and displays the information in a more friendly<br>
+format.</p>
+
+<p>The <tt>--csv</tt> option can be used to output the data in comma<br>
+separated format which can be easily imported into a spreadsheet. For<br>
+example, the following command creates a csv file containing the<br>
+certificate information:</p>
+
+<div class="panel" style="border-width: 1px;"><div class="panelContent">
+<p><tt>./vpn_client show-cert --csv &gt; packages/certs.csv</tt></p>
+</div></div>
+
+
+<p><a name="OpenVPNHOWTOs-active"></a></p>
+<h3><a name="OpenVPNHOWTOs-Showcurrentusers"></a>Show current users</h3>
+
+<ul>
+	<li>On <b>ca.example.com</b> as the <b>vpn</b> user run:
+<div class="panel" style="border-width: 1px;"><div class="panelContent">
+<p><tt>./vpn_client show-active</tt></p>
+</div></div></li>
+</ul>
+
+
+<p>The <b><tt>vpn_client show-active</tt></b> command logs into each OpenVPN server<br>
+as the <b>openvpn</b> user and parses data from the<br>
+<tt>/var/run/openvpn/openvpn-status.log</tt> file and then prints it out in<br>
+a more readable format.</p>
+
+<p>You can see the raw data by logging into each OpenVPN server as the<br>
+<b>openvpn</b> user and running:</p>
+<div class="panel" style="border-width: 1px;"><div class="panelContent">
+<p><tt>cat /var/run/openvpn/openvpn-status.log</tt></p>
+</div></div>
+
+
+<p><a name="OpenVPNHOWTOs-access"></a></p>
+<h3><a name="OpenVPNHOWTOs-Showuseraccesslog"></a>Show user access log</h3>
+
+<ul>
+	<li>Show the OpenVPN user access log (connect/disconnect) for past 1-2 weeks
+<div class="panel" style="border-width: 1px;"><div class="panelContent">
+<p><tt>./vpn_client show-access</tt></p>
+</div></div></li>
+</ul>
+
+
+<ul>
+	<li>Show all OpenVPN user access logs (connect/disconnect). This will take a while to complete.
+<div class="panel" style="border-width: 1px;"><div class="panelContent">
+<p><tt>./vpn_client show-access --all</tt></p>
+</div></div></li>
+</ul>
+
+
+<ul>
+	<li>Show one user's OpenVPN access log (connect/disconnect)
+<div class="panel" style="border-width: 1px;"><div class="panelContent">
+<p><tt>./vpn_client show-access | grep <font color="red">&lt;common_name&gt;</font></tt></p>
+</div></div></li>
+</ul>
+
+
+<ul>
+	<li>Show the OpenVPN user access log (connects/disconnects) for April 24th:
+<div class="panel" style="border-width: 1px;"><div class="panelContent">
+<p><tt>./vpn_client show-access | grep 'Apr *24 '</tt></p>
+</div></div></li>
+</ul>
+
+
+<p>The <tt>--csv</tt> option can be used to output the data in comma<br>
+separated format which can be easily imported into a spreadsheet. For<br>
+example, the following command creates a csv file containing the<br>
+access log:</p>
+
+<div class="panel" style="border-width: 1px;"><div class="panelContent">
+<p><tt>./vpn_client show-access --csv &gt; packages/access.csv</tt></p>
+</div></div>
+
+<p>The <b><tt>vpn_client show-access</tt></b> command log into each OpenVPN server<br>
+as the <b>openvpn</b> user and parses data from the openvpn log at<br>
+<tt>/var/log/openvpn.log*</tt> and then prints it out in a more readable<br>
+format.</p>
+
+<p>You can see the raw access data by by logging into each OpenVPN server<br>
+as the <b>openvpn</b> user and running:</p>
+<div class="panel" style="border-width: 1px;"><div class="panelContent">
+<p><tt>egrep '(SENT|SIGUSR1)' /var/log/openvpn.log*</tt></p>
+</div></div>
+
+
+
+<p><a name="OpenVPNHOWTOs-policy"></a></p>
+<h3><a name="OpenVPNHOWTOs-Createanewaccesspolicy"></a>Create a new access policy</h3>
+
+<p>Creating a new access policy involves two parts: creating an Active<br>
+Directory VPN group and creating the matching firewall policy. Once an<br>
+access policy exists, users can be given access simply by making their<br>
+Active Directory account a member of the VPN group.</p>
+
+<ul>
+	<li>Create a new Active Directory group named <b><tt>VPN <font color="blue">&lt;group_name&gt;</font></tt></b>.</li>
+	<li>In the group <b>Notes</b> field, assign a policy number (1-254):
+<div class="panel" style="border-width: 1px;"><div class="panelContent">
+<p><tt>vpn_access: <font color="green">&lt;policy_num&gt;</font></tt></p>
+</div></div></li>
+	<li>Add users with this access policy as group members.</li>
+</ul>
+
+
+<ul>
+	<li>Create a firewall rule (openvpn to trust) for this access policy:
+<table class="confluenceTable"><tbody>
+<tr>
+<th class="confluenceTh"> Source </th>
+<th class="confluenceTh"> Destination </th>
+<th class="confluenceTh"> Service </th>
+</tr>
+<tr>
+<td class="confluenceTd"> VPN - <font color="blue">&lt;group_name&gt;</font> <b>10.100.<font color="green">&lt;policy_num&gt;</font>.0/24</b> <br clear="all"> VPN - <font color="blue">&lt;group_name&gt;</font> <b>10.101.<font color="green">&lt;policy_num&gt;</font>.0/24</b> </td>
+<td class="confluenceTd"> <font color="orange">&lt;server_list&gt;</font> </td>
+<td class="confluenceTd"> ANY </td>
+</tr>
+</tbody></table></li>
+</ul>
+
+
+<p>Usually, a VPN user will be added to an existing access policy group.<br>
+But when you need to create a new access policy group, here are the<br>
+steps:</p>
+<ul class="alternate" type="square">
+	<li>Log onto an Active Directory system and launch the "AD Users and<br>
+      Computers" tool. Create a new group, making sure that the group<br>
+      name starts with "VPN ".</li>
+	<li>Edit the notes field of the new group and add a line of text<br>
+      that has the form "vpn_access: 15". This means that user will be<br>
+      assigned an IP address such as 10.100.15.10 where 100 is the<br>
+      number of the OpenVPN server that the user is connected to and<br>
+      10 is an unused address between 6 and 254.</li>
+	<li>A matching firewall must now be created that allows clients in<br>
+      subnet 10.100.15.0/24 and 10.101.15.0/24 (100 and 101 are for<br>
+      each OpenVPN server) to connect to the appropriate systems in<br>
+      the trust or DMZ firewall zones.</li>
+</ul>
+
+
+<div class="panelMacro"><table class="infoMacro"><colgroup><col width="24"><col></colgroup><tbody><tr><td valign="top"><img src="OpenVPN+HOWTOs_files/information.gif" alt="" width="16" align="absmiddle" border="0" height="16"></td><td>It's important to note that since the access policies are IP<br>
+address based, a client can only have one access policy applied at<br>
+a time. If the user is a member of more than one VPN group, the access<br>
+policy that is applied will be the lowest number found. For this<br>
+reason, access policies with lower numbers should be given the higher<br>
+authorization.</td></tr></tbody></table></div>
+        </div>
+
+
+            
+    
+    
+    
+</div>
+
+
+</body></html>
