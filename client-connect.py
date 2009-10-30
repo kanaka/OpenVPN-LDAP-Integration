@@ -203,7 +203,24 @@ class openvpn_allocator:
             if debug >= 3:
                 print "searching for '%s' in '%s'" % (cname, gname)
             for user in [x.lower() for x in group['member']]:
-                if user.find("=%s," % cname) < 0: continue
+                found = False
+                # Check if account name and CN are same
+                if user.find("=%s," % cname) >= 0: found = True
+
+                # Otherwise do the slower lookups
+                if not found:
+                    # Get the user's canonical name
+                    base_dn = user
+                    filter = "(sAMAccountName=%s)" % cname
+                    try:
+                        res = con.search_s(base_dn, ldap.SCOPE_SUBTREE, filter)
+                    except ldap.LDAPError, e:
+                        print "Error:", e
+                        return 0
+
+                    if res: found = True
+
+                if not found: continue
 
                 if debug >= 2:
                     print "found '%s' in '%s'" % (cname, gname)
@@ -230,9 +247,8 @@ class openvpn_allocator:
 
         # Read the user's data
         base_dn = user_dn
-        filter = "(cn=%s)" % cname
+        filter = "(sAMAccountName=%s)" % cname
         try:
-            # TODO: secure connection to the ldap server
             res = con.search_s(base_dn, ldap.SCOPE_SUBTREE, filter)
         except ldap.LDAPError, e:
             print "Error:", e

@@ -1,2 +1,111 @@
+OpenVPN LDAP Integration README
+
 See docs/config.html for how to setup your infrastructure to be able
-to use these scripts.
+to use these tools.
+
+This file only describes how to download, unpack and fix the accessory
+files to enable the vpn_client program to create Windows installer
+packages and DD-WRT firmware images.
+
+For more information about OpenVPN see:
+  http://openvpn.net/index.php/open-source/documentation/howto.html
+
+
+
+
+*** Prepare Windows client package data ***
+
+  - Install 7zip
+
+    sudo apt-get install p7zip-full
+
+  - Get the source and installer package:
+
+    wget http://openvpn.net/release/openvpn-2.1_rc18.zip
+    wget http://openvpn.net/release/openvpn-2.1_rc18-install.exe
+
+  - Unpack archives:
+    unzip openvpn-2.1_rc18.zip
+    7z x openvpn-2.1_rc18-install.exe -oopenvpn-2.1_rc18-install/
+        - choose (u) for "A(u)to rename"
+
+  - In the source directory:
+
+    cd openvpn-2.1_rc18
+    sh install-win32/winconfig
+    touch install-win32/xguidefs.nsi
+    echo '!define OPENVPN_GUI_DEFINED' > install-win32/guidefs.nsi
+
+  - In the unpacked executable directory:
+
+    cd ../openvpn-2.1_rc18-install
+
+    mkdir install-win32 images lib text config
+    cp ../openvpn-2.1_rc18/autodefs/*.nsi install-win32/
+    cp ../openvpn-2.1_rc18/install-win32/*.nsi install-win32/
+    cp ../openvpn-2.1_rc18/images/install-whirl.bmp images/
+
+    mv sample-config samples
+    mv icon.ico images
+
+    mv bin/*.dll lib
+    mv *.txt text
+
+    mkdir -p {driver,tapinstall}/{i386,amd64}
+    mv bin/tapinstall.exe tapinstall/amd64/tapinstall.exe
+    mv bin/tapinstall_1.exe tapinstall/i386/tapinstall.exe
+    mv driver/OemWin2k.inf driver/amd64/OemWin2k.inf
+    mv driver/OemWin2k_1.inf driver/i386/OemWin2k.inf
+    mv driver/tap0901.sys driver/amd64/tap0901.sys
+    mv driver/tap0901_1.sys driver/i386/tap0901.sys
+    mv driver/tap0901.cat driver/amd64/tap0901.cat
+    mv driver/tap0901_1.cat driver/i386/tap0901.cat
+
+    cd install-win32
+    echo '!define SAMPCONF_DIR  "config"'      >> defs.nsi
+    echo '!define SAMPCONF_CONF "client.ovpn"' >> defs.nsi
+    echo '!define SAMPCONF_P12  "client.p12"'  >> defs.nsi
+    echo '!define SAMPCONF_TA   "ta.key"'      >> defs.nsi
+    sed -i '/SHOWREADME.*INSTALL-win32.txt/{n;s/^/    !define MUI_FINISHPAGE_SHOWREADME_NOTCHECKED\n/;}' openvpn.nsi
+
+
+  - You can now delete the source directory and archives:
+
+    rm openvpn-2.1_rc18.zip openvpn-2.1_rc18-install.exe
+    rm -rf openvpn-2.1_rc18
+
+
+
+*** Prepare firmware mod-kit and base DD-WRT image ***
+
+  - Relevant links:
+
+    http://www.dd-wrt.com/wiki/index.php/Development
+    http://www.bitsum.com/firmware_mod_kit.htm
+
+  - First OS package dependencies:
+
+    sudo apt-get build-essential zlib1g-dev
+    sudo apt-get install subversion
+
+  - Download the firmware mod-kit:
+
+    svn co http://firmware-mod-kit.googlecode.com/svn/trunk/trunk mod-kit
+
+  - Download the base DD-WRT firmware kit:
+
+    wget http://www.dd-wrt.com/dd-wrtv2/downloads/others/eko/V24_TNG/svn12250/dd-wrt.v24-12250_NEWD_openvpn.bin
+
+
+
+*** Recovering from bad firmware flash ***
+
+    - Relevant link:
+
+      http://www.dd-wrt.com/wiki/index.php/Recover_from_a_Bad_Flash
+
+    - Download firmware for your hardware with a "W54G" header:
+      wget http://www.dd-wrt.com/dd-wrtv2/downloads/v24-sp1/Consumer/Linksys/WRT54GL_1.1/dd-wrt.v24_mini_wrt54g.bin
+      wget http://www.dd-wrt.com/dd-wrtv2/downloads/others/eko/V24_TNG/svn12250/dd-wrt.v24-12250_NEWD_mini_wgr614v8-L.chk
+
+

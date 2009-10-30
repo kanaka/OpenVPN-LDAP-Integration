@@ -370,6 +370,7 @@ derive_settings() {
     http_password=$(perl -e "print crypt('$key_password','\$1\$2ujv89t5\$');")
     servers=$(host -t A ${serv_host} | awk '{print $4}')
     
+    openvpn=${openvpn:-openvpn}
     makensis=${makensis:-makensis}
     zip=${zip:-zip}
     find_pkg=$(dirname $(ls -d ${top_dir}/*/install-win32 \
@@ -562,7 +563,11 @@ sanity_checks() {
     esac
 
     # State that is required for NSIS package and firmware generation
+    which openssl &>/dev/null || die "openssl command not found"
     case ${command} in
+    new-ca)
+        which ${openvpn} &>/dev/null || die "${openvpn} command not found"
+        ;;
     new|pkg|package)
         which ${makensis} &>/dev/null || die "${makensis} command not found"
         which ${zip} &>/dev/null || die "${zip} command not found"
@@ -708,7 +713,7 @@ gen_ca() {
         || die "Failed to generate empty CRL file"
 
     echo -e "\n>>> Generating TLSAUTH static key"
-    openvpn --genkey --secret ta.key \
+    ${openvpn} --genkey --secret ta.key \
         || die "Failed to generate TLSAUTH static key"
 
     echo -e "\n>>> Generating Diffie Hellman parameters"
