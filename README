@@ -4,8 +4,8 @@ This file only describes how to download, unpack and fix the accessory
 files to enable the vpn_client program to create Windows installer
 packages.
 
-The README.DD-WRT file descript how to configure and create the DD-WRT
-firmware images that contain an embedded VPN client and router.
+The README.DD-WRT file describes how to configure and create the
+DD-WRT firmware images that contain an embedded VPN client and router.
 
 See docs/config.html for how to setup your infrastructure to be able
 to use these tools.
