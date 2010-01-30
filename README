@@ -1,11 +1,14 @@
 OpenVPN LDAP Integration README
 
-See docs/config.html for how to setup your infrastructure to be able
-to use these tools.
-
 This file only describes how to download, unpack and fix the accessory
 files to enable the vpn_client program to create Windows installer
-packages and DD-WRT firmware images.
+packages.
+
+The README.DD-WRT file descript how to configure and create the DD-WRT
+firmware images that contain an embedded VPN client and router.
+
+See docs/config.html for how to setup your infrastructure to be able
+to use these tools.
 
 For more information about OpenVPN see:
   http://openvpn.net/index.php/open-source/documentation/howto.html
@@ -90,51 +93,81 @@ For more information about OpenVPN see:
 
 
 
-*** Prepare firmware mod-kit and base DD-WRT image ***
+*** Client installation prompts in Windows ***
 
-    In order to generate DD-WRT firmware images for the Linksys WRT54G
-    wireless router, there are two components that are required. The
-    first is the mod-kit tool used for packing and unpacking
-    a firmware image. The second component is the base firmware image
-    itself.
+If their is a client already install, stop it first: right click on
+double computer icon (with red, yellow or green screens) in task tray
+(lower right) and select "Exit".
 
-    When the vpn_client command is used to generate a firmware image,
-    it will use the mod-kit to unpack the base firmware image, add the
-    client cert/key information, and add some additional scripts and
-    settings to the firmware image to make the VPN connection
-    establish correctly when the router is plugged in.
+- <Vista Only> User Account Control. An unidentified program wants
+  acces to your computer. ...
+  [-> Cancel]  *[-> Allow]*
 
-  - Relevant links:
+- <WinXP sometimes> Open File - Security Warning. The publisher could
+  not be verified. ...
+  *[Run]*  [Cancel]
 
-    http://www.dd-wrt.com/wiki/index.php/Development
-    http://www.bitsum.com/firmware_mod_kit.htm
+- Welcome to the OpenVPN 2.1_rc18 Setup Wizard. ...
+  *[Next >]*  [Cancel]
 
-  - First OS package dependencies:
+- License Agreement. ...
+  [< Back]  *[I Agree]*  [Cancel]
 
-    sudo apt-get build-essential zlib1g-dev
-    sudo apt-get install subversion
+- Choose components. ...
+  [< Back]  *[Next >]*  [Cancel]
 
-  - Download the firmware mod-kit:
+- Choose Install Location. ...
+  [< Back]  *[Install]*  [Cancel]
 
-    svn co http://firmware-mod-kit.googlecode.com/svn/trunk/trunk mod-kit
+- Hardware Installation. ... TAP-Win32 Adapter ...
+  *[Continue Anyway]*  [STOP Installation]
 
-  - Download the base DD-WRT firmware kit:
+- Installation Complete ...
+  *[Next >]*
 
-    wget http://www.dd-wrt.com/dd-wrtv2/downloads/others/eko/V24_TNG/svn12250/dd-wrt.v24-12250_NEWD_openvpn.bin
+- Completing the OpenVPN 2.1_rc4-gui-1.0.3 Setup Wizard. ...
+  *[Finish]*
+
+- <Vista sometimes> Program Compatibility Assistant. This program
+  might not have installed correctly.
+  [Reinstall using recommended settings]
+  *[This program installed correctly]*
 
 
+In Windows Vista there is an additional step you must do. Right click
+on the "OpenVPN GUI" icon on the desktop and select "Properties".
+In the "Shortcut" tab, select "Advanced...". The choose "Run as
+administrator". Then click the "OK" buttons to save and close the
+dialogs.
 
-*** Recovering from bad firmware flash ***
+If you need to run this program as a user other than the user that you
+used to install the program, there are some additional steps you need
+to take.
 
-      If you (apparently) brick your router, it may still be possible
-      to recover it by following the instructions below.
 
-    - Relevant link:
+*** Client installation on Windows as normal user (non-admin) ***
 
-      http://www.dd-wrt.com/wiki/index.php/Recover_from_a_Bad_Flash
+- Do a normal install, but unselect auto-start during install
 
-    - Download firmware for your hardware with a "W54G" header:
-      wget http://www.dd-wrt.com/dd-wrtv2/downloads/v24-sp1/Consumer/Linksys/WRT54GL_1.1/dd-wrt.v24_mini_wrt54g.bin
-      wget http://www.dd-wrt.com/dd-wrtv2/downloads/others/eko/V24_TNG/svn12250/dd-wrt.v24-12250_NEWD_mini_wgr614v8-L.chk
+- Right click "OpenVPN GUI" icon
+    - Under "Shortcut tab"
+    - Choose "Advanced..."
+    - Select "Run with different credentials"
+    - Select the "Security" tab
+    - Click "Add..."
+    - Type "Users" into the box labelled "Enter the object names to
+      select" 
+    - Click "OK" and then "OK" again
+
+- Copy desktop shortcut to all users desktop
+    - Right click "OpenVPN GUI" icon and choose "Cut"
+    - Right click start menu and choose, "Open All Users"
+    - Hit "Backspace" to go up one level
+    - Double-click on the Desktop folder
+    - Right-click on an empty space and select "Paste"
+
+- Now when you run it as any user, you will be prompted:
+    - Select "The following user:"
+    - Enter a user name and password with administrative access
 
 

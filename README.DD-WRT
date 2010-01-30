@@ -1,0 +1,90 @@
+*** Prepare firmware mod-kit and base DD-WRT image ***
+
+    In order to generate DD-WRT firmware images for the Linksys WRT54G
+    wireless router, there are two components that are required. The
+    first is the mod-kit tool used for packing and unpacking
+    a firmware image. The second component is the base firmware image
+    itself.
+
+    When the vpn_client command is used to generate a firmware image,
+    it will use the mod-kit to unpack the base firmware image, add the
+    client cert/key information, and add some additional scripts and
+    settings to the firmware image to make the VPN connection
+    establish correctly when the router is plugged in.
+
+  - Relevant links:
+
+    http://www.dd-wrt.com/wiki/index.php/Development
+    http://www.bitsum.com/firmware_mod_kit.htm
+
+  - First install OS package dependencies:
+
+    sudo apt-get install build-essential zlib1g-dev
+    sudo apt-get install subversion
+
+  - Download the firmware mod-kit:
+
+    svn co http://firmware-mod-kit.googlecode.com/svn/trunk/trunk mod-kit
+
+  - Download the base DD-WRT firmware kit:
+
+    wget http://www.dd-wrt.com/dd-wrtv2/downloads/others/eko/V24_TNG/svn12250/dd-wrt.v24-12250_NEWD_openvpn.bin
+
+
+*** Customizing the DD-WRT firmware configuration ***
+
+  - Update/replace 'config/router.conf' with correct OpenVPN client
+    settings for the VPN server you wish to connect to.
+    
+    - Make sure you at least have these lines:
+
+        client
+        remote HHHHH
+        port PPPP
+        dev tun
+
+        script-security 2 system
+        ipchange /tmp/openvpn/route-up2.sh
+        ca /tmp/openvpn/ca.crt
+        cert /tmp/openvpn/cert.pem
+        key /tmp/openvpn/key.pem
+
+  - Update/replace 'config/nvram/dnsmasq_options' with setting
+    appropriate to the network you are connecting to.
+
+  - Set public (non-tunneled) SSID and password in:
+    config/nvram/wl_ssid
+    config/nvram/wl0_ssid
+    config/nvram/wl0_wpa_psk
+
+  - Set private (tunneled) SSID and password in:
+    config/nvram/wl0.1_ssid
+    config/nvram/wl0.1_wpa_psk
+
+
+  - The default network security settings are:
+
+        Network      Type      IP block        Logical
+        Port 1 + 2   public    192.168.1.0/24  br0
+        Port 3 + 4   tunneled  192.168.2.0/24  vlan2
+        Wifi wl0     public    192.168.3.0/24  br1
+        Wifi wl0.1   tunneled  192.168.2.0/24  vlan2
+
+
+
+*** Recovering from bad firmware flash ***
+
+      If you (apparently) brick your router, it may still be possible
+      to recover it by following the instructions below.
+
+    - Relevant link:
+
+      http://www.dd-wrt.com/wiki/index.php/Recover_from_a_Bad_Flash
+
+    - Download firmware for your hardware with a "W54G" header:
+      wget http://www.dd-wrt.com/dd-wrtv2/downloads/v24-sp1/Consumer/Linksys/WRT54GL_1.1/dd-wrt.v24_mini_wrt54g.bin
+      wget http://www.dd-wrt.com/dd-wrtv2/downloads/others/eko/V24_TNG/svn12250/dd-wrt.v24-12250_NEWD_mini_wgr614v8-L.chk
+
+
+    - Use the "W54G" header firmware and the tftp instructions to
+      recover the the router.
